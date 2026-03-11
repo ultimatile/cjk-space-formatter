@@ -1,0 +1,17 @@
+[project]
+name = "cjk-space-formatter"
+version = "0.1.0"
+description = "Remove unnecessary spaces between CJK and non-CJK characters in Typst/Markdown files"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+cjk-space-formatter = "cjk_space_formatter.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
