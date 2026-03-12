@@ -56,6 +56,24 @@ class TestFormatLine:
     def test_heading_line(self):
         assert format_line("= KAK（Weyl）分解") == "= KAK（Weyl）分解"
 
+    def test_typst_ref_space_preserved(self):
+        """Space after @label terminates the reference — must not be removed."""
+        assert format_line("式 @eq:fidelity の計算") == "式@eq:fidelity の計算"
+
+    def test_typst_ref_ascii_after(self):
+        """Space after @label before ASCII is already safe, verify no regression."""
+        assert format_line("see @eq:fidelity for details") == "see @eq:fidelity for details"
+
+    def test_typst_ref_no_trailing_space(self):
+        """@label at end of line (no trailing space) — nothing to protect."""
+        assert format_line("参照 @eq:cost") == "参照@eq:cost"
+
+    def test_typst_ref_multiple(self):
+        assert (
+            format_line("式 @eq:a と @eq:b を比較")
+            == "式@eq:a と@eq:b を比較"
+        )
+
 
 class TestFormatText:
     """Integration tests for multi-line text formatting."""

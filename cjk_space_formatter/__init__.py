@@ -25,6 +25,8 @@ _PAT_INLINE_MATH = re.compile(r"\$[^$]*\$")
 _PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w-]+>)?\s*$")
 # Typst structural prefixes whose trailing space must be preserved
 _PAT_TYPST_PREFIX = re.compile(r"^(\s*(?:=+ |[-+] |\d+\. ))")
+# Typst label references: @label followed by space(s) — space terminates the label
+_PAT_TYPST_REF = re.compile(r"@[\w:.-]+ +")
 
 
 def _remove_cjk_spaces(text: str) -> str:
@@ -59,9 +61,22 @@ def format_line(line: str) -> str:
         return f"\x00M{len(math_blocks) - 1}\x00"
 
     processed = _PAT_INLINE_MATH.sub(_save_math, line)
+
+    # Extract Typst @references (with trailing space) to protect the space
+    # that terminates the label from being removed
+    ref_blocks: list[str] = []
+
+    def _save_ref(m: re.Match) -> str:
+        ref_blocks.append(m.group(0))
+        return f"\x00R{len(ref_blocks) - 1}\x00"
+
+    processed = _PAT_TYPST_REF.sub(_save_ref, processed)
+
     processed = _remove_cjk_spaces(processed)
 
-    # Restore math blocks
+    # Restore @references, then math blocks
+    for i, block in enumerate(ref_blocks):
+        processed = processed.replace(f"\x00R{i}\x00", block)
     for i, block in enumerate(math_blocks):
         processed = processed.replace(f"\x00M{i}\x00", block)
 
