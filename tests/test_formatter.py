@@ -68,6 +68,13 @@ class TestFormatLine:
         """@label at end of line (no trailing space) — nothing to protect."""
         assert format_line("参照 @eq:cost") == "参照@eq:cost"
 
+    def test_half_width_colon_space_preserved(self):
+        """Space after half-width colon before CJK must be preserved."""
+        assert format_line("注: これはテスト") == "注: これはテスト"
+
+    def test_half_width_colon_in_context(self):
+        assert format_line("定義: 任意の $U$ を考える") == "定義: 任意の$U$を考える"
+
     def test_typst_ref_multiple(self):
         assert (
             format_line("式 @eq:a と @eq:b を比較")
