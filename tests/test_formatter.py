@@ -81,6 +81,15 @@ class TestFormatLine:
             == "式@eq:a と@eq:b を比較"
         )
 
+    def test_hash_space_before_cjk_preserved(self):
+        """Space after # before CJK must be preserved (Markdown heading / Typst command)."""
+        assert format_line("# ほげ") == "# ほげ"
+
+    def test_multi_hash_heading_preserved(self):
+        """Multi-level Markdown headings preserve space before CJK."""
+        assert format_line("## セクション") == "## セクション"
+        assert format_line("### 見出し") == "### 見出し"
+
 
 class TestFormatText:
     """Integration tests for multi-line text formatting."""

@@ -17,8 +17,8 @@ _CJK = f"[{_CJK_RANGES}]"
 
 # CJK char followed by space(s) then non-space
 _PAT_CJK_SPACE = re.compile(f"({_CJK}) +(?=\\S)")
-# Non-space (except half-width colon) followed by space(s) then CJK char
-_PAT_SPACE_CJK = re.compile(f"([^\\s:]) +(?={_CJK})")
+# Non-space (except half-width colon and #) followed by space(s) then CJK char
+_PAT_SPACE_CJK = re.compile(f"([^\\s:#]) +(?={_CJK})")
 # Inline math: $...$
 _PAT_INLINE_MATH = re.compile(r"\$[^$]*\$")
 # Block math closer: just $ with optional Typst label
