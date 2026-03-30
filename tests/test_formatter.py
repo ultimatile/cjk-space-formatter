@@ -90,6 +90,50 @@ class TestFormatLine:
         assert format_line("## セクション") == "## セクション"
         assert format_line("### 見出し") == "### 見出し"
 
+    @pytest.mark.parametrize(
+        "input_text, expected",
+        [
+            # Simple and dotted identifiers
+            ("#sym.ballot 基底状態", "#sym.ballot 基底状態"),
+            ("#sym.icon.ballot 基底状態", "#sym.icon.ballot 基底状態"),
+            ("#strong 太字テスト", "#strong 太字テスト"),
+            # Parenthesised arguments (flat, nested, with strings)
+            ("#text(red) 赤いテキスト", "#text(red) 赤いテキスト"),
+            ("#text(rgb(255, 0, 0)) 赤いテキスト", "#text(rgb(255, 0, 0)) 赤いテキスト"),
+            ('#set heading(numbering: "1.") 見出し', '#set heading(numbering: "1.") 見出し'),
+            # Escaped backslashes / quotes inside strings
+            (r'#text("C:\\") 日本語', r'#text("C:\\") 日本語'),
+            (r'#text("say \"hi\"") テスト', r'#text("say \"hi\"") テスト'),
+            # Before ASCII — space is already safe, must not break
+            ("#sym.ballot some text", "#sym.ballot some text"),
+            # Inside list item
+            ("+ #sym.ballot 基底状態の計算", "+ #sym.ballot 基底状態の計算"),
+            # No trailing space — nothing to protect
+            ("#sym.ballot", "#sym.ballot"),
+        ],
+        ids=[
+            "dotted", "multi-dotted", "simple-ident",
+            "parens", "nested-parens", "keyword-string-args",
+            "escaped-backslash", "escaped-quote",
+            "before-ascii", "in-list", "no-trailing-space",
+        ],
+    )
+    def test_typst_hash_expr(self, input_text, expected):
+        """Typst hash expressions preserve the terminating space."""
+        assert format_line(input_text) == expected
+
+    @pytest.mark.parametrize(
+        "input_text, expected",
+        [
+            ("Issue #123 の修正", "Issue #123の修正"),
+            ("#123 バグ", "#123バグ"),
+        ],
+        ids=["mid-sentence", "standalone"],
+    )
+    def test_markdown_issue_ref_not_protected(self, input_text, expected):
+        """Numeric #N tokens are not Typst expressions — space collapses normally."""
+        assert format_line(input_text) == expected
+
 
 class TestFormatText:
     """Integration tests for multi-line text formatting."""
