@@ -66,10 +66,16 @@ cat file.typ | cjk-space-formatter
 
 ### Spaces preserved
 
-- Between English words: `Weyl chamber` stays as-is
-- Inside math `$...$`: `$A times.o B$` stays as-is
-- Block math lines (`$ ... $`, multi-line equations)
-- Typst structural syntax: headings (`= `, `== `), list markers (`- `, `+ `)
+| Pattern | Example | Reason |
+|---|---|---|
+| Between English words | `Weyl chamber` | English spacing |
+| Inside math `$...$` | `$A times.o B$` | Math content |
+| Block math lines | `$ U = A B $` | Multi-line equations |
+| Typst structural syntax | `= `, `== `, `- `, `+ ` | Headings, list markers |
+| After half-width colon | `注: これは` | Colon-space convention |
+| After `#` before CJK | `# 見出し` | Markdown headings / Typst commands |
+| After Typst `#expr` | `#sym.ballot 基底` | Space terminates expression |
+| After Typst `@label` | `@eq:cost の計算` | Space terminates label reference |
 
 ## Library API
 
