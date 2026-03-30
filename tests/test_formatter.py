@@ -106,6 +106,20 @@ class TestFormatLine:
         """Hash expression with parentheses preserves trailing space."""
         assert format_line("#text(red) 赤いテキスト") == "#text(red) 赤いテキスト"
 
+    def test_typst_hash_nested_parens(self):
+        """Nested parentheses inside hash expression arguments."""
+        assert (
+            format_line("#text(rgb(255, 0, 0)) 赤いテキスト")
+            == "#text(rgb(255, 0, 0)) 赤いテキスト"
+        )
+
+    def test_typst_hash_string_in_args(self):
+        """Quoted strings inside hash expression arguments."""
+        assert (
+            format_line('#set heading(numbering: "1.") 見出し')
+            == '#set heading(numbering: "1.") 見出し'
+        )
+
     def test_typst_hash_before_ascii(self):
         """Hash expression before ASCII — space already safe."""
         assert format_line("#sym.ballot some text") == "#sym.ballot some text"
@@ -116,6 +130,18 @@ class TestFormatLine:
             format_line("+ #sym.ballot 基底状態の計算")
             == "+ #sym.ballot 基底状態の計算"
         )
+
+    def test_markdown_issue_ref_not_protected(self):
+        """#123 is a Markdown issue ref, not a Typst expression — space should collapse."""
+        assert format_line("Issue #123 の修正") == "Issue #123の修正"
+
+    def test_markdown_issue_ref_standalone(self):
+        """Bare #123 followed by CJK — still collapsed."""
+        assert format_line("#123 バグ") == "#123バグ"
+
+    def test_typst_hash_no_trailing_space(self):
+        """Hash expression without trailing space — nothing to protect."""
+        assert format_line("#sym.ballot") == "#sym.ballot"
 
 
 class TestFormatText:

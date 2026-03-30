@@ -27,10 +27,96 @@ _PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w-]+>)?\s*$")
 _PAT_TYPST_PREFIX = re.compile(r"^(\s*(?:=+ |[-+] |\d+\. ))")
 # Typst label references: @label followed by space(s) — space terminates the label
 _PAT_TYPST_REF = re.compile(r"@[\w:.-]+ +")
-# Typst hash expressions: #identifier.chain followed by space(s)
-# e.g. #sym.ballot, #text(...), #set heading(...)
-# The trailing space terminates the expression and must be preserved.
-_PAT_TYPST_HASH = re.compile(r"#[\w.]+(?:\([^)]*\))? +")
+
+
+# Typst keywords that take a following expression (e.g. #set heading(...))
+_TYPST_KEYWORDS = frozenset({"set", "show", "let", "import", "include"})
+
+
+def _scan_ident(text: str, i: int, n: int) -> int:
+    """Scan a dotted identifier: letters, digits, underscores, hyphens, dots."""
+    while i < n and (text[i].isalnum() or text[i] in "_-."):
+        i += 1
+    return i
+
+
+def _scan_balanced_parens(text: str, i: int, n: int) -> int:
+    """Scan balanced parentheses, handling nesting and quoted strings."""
+    if i >= n or text[i] != "(":
+        return i
+    depth = 1
+    i += 1
+    in_str = False
+    while i < n and depth > 0:
+        c = text[i]
+        if in_str:
+            if c == '"' and text[i - 1] != "\\":
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        i += 1
+    return i
+
+
+def _extract_typst_hash(text: str) -> tuple[str, list[str]]:
+    """Extract Typst hash expressions with trailing spaces into placeholders.
+
+    Typst hash expressions start with ``#`` followed by a letter or underscore
+    (distinguishing them from Markdown ``#123`` issue references).  The scanner
+    walks through dot-separated identifiers and balanced parentheses (handling
+    nested parens and quoted strings) so that inputs like
+    ``#set heading(numbering: "1.") 見出し`` are fully captured.
+
+    For Typst keywords (``set``, ``show``, etc.), the scanner continues past
+    the space into the following identifier and its arguments.
+
+    Only expressions followed by at least one space are extracted — the space
+    terminates the expression in Typst and must be preserved.
+    """
+    blocks: list[str] = []
+    result: list[str] = []
+    i = 0
+    n = len(text)
+
+    while i < n:
+        # Typst hash expression: # followed by letter or underscore
+        if (
+            text[i] == "#"
+            and i + 1 < n
+            and (text[i + 1].isalpha() or text[i + 1] == "_")
+        ):
+            start = i
+            i += 1
+            ident_start = i
+            i = _scan_ident(text, i, n)
+            ident = text[ident_start:i]
+            i = _scan_balanced_parens(text, i, n)
+
+            # Typst keywords take a following expression: #set heading(...)
+            if ident in _TYPST_KEYWORDS:
+                while i < n and text[i] == " ":
+                    i += 1
+                i = _scan_ident(text, i, n)
+                i = _scan_balanced_parens(text, i, n)
+
+            # Capture trailing spaces
+            space_start = i
+            while i < n and text[i] == " ":
+                i += 1
+            if i > space_start:
+                blocks.append(text[start:i])
+                result.append(f"\x00H{len(blocks) - 1}\x00")
+            else:
+                result.append(text[start:i])
+        else:
+            result.append(text[i])
+            i += 1
+
+    return "".join(result), blocks
 
 
 def _remove_cjk_spaces(text: str) -> str:
@@ -76,15 +162,8 @@ def format_line(line: str) -> str:
 
     processed = _PAT_TYPST_REF.sub(_save_ref, processed)
 
-    # Extract Typst hash expressions (with trailing space) to protect the space
-    # that terminates the expression from being removed
-    hash_blocks: list[str] = []
-
-    def _save_hash(m: re.Match) -> str:
-        hash_blocks.append(m.group(0))
-        return f"\x00H{len(hash_blocks) - 1}\x00"
-
-    processed = _PAT_TYPST_HASH.sub(_save_hash, processed)
+    # Extract Typst hash expressions (with trailing space)
+    processed, hash_blocks = _extract_typst_hash(processed)
 
     processed = _remove_cjk_spaces(processed)
 
