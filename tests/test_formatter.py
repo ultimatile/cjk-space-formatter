@@ -90,72 +90,49 @@ class TestFormatLine:
         assert format_line("## セクション") == "## セクション"
         assert format_line("### 見出し") == "### 見出し"
 
-    def test_typst_hash_expr_space_preserved(self):
-        """Space after #identifier.chain before CJK must be preserved."""
-        assert format_line("#sym.ballot 基底状態") == "#sym.ballot 基底状態"
+    @pytest.mark.parametrize(
+        "input_text, expected",
+        [
+            # Simple and dotted identifiers
+            ("#sym.ballot 基底状態", "#sym.ballot 基底状態"),
+            ("#sym.icon.ballot 基底状態", "#sym.icon.ballot 基底状態"),
+            ("#strong 太字テスト", "#strong 太字テスト"),
+            # Parenthesised arguments (flat, nested, with strings)
+            ("#text(red) 赤いテキスト", "#text(red) 赤いテキスト"),
+            ("#text(rgb(255, 0, 0)) 赤いテキスト", "#text(rgb(255, 0, 0)) 赤いテキスト"),
+            ('#set heading(numbering: "1.") 見出し', '#set heading(numbering: "1.") 見出し'),
+            # Escaped backslashes / quotes inside strings
+            (r'#text("C:\\") 日本語', r'#text("C:\\") 日本語'),
+            (r'#text("say \"hi\"") テスト', r'#text("say \"hi\"") テスト'),
+            # Before ASCII — space is already safe, must not break
+            ("#sym.ballot some text", "#sym.ballot some text"),
+            # Inside list item
+            ("+ #sym.ballot 基底状態の計算", "+ #sym.ballot 基底状態の計算"),
+            # No trailing space — nothing to protect
+            ("#sym.ballot", "#sym.ballot"),
+        ],
+        ids=[
+            "dotted", "multi-dotted", "simple-ident",
+            "parens", "nested-parens", "keyword-string-args",
+            "escaped-backslash", "escaped-quote",
+            "before-ascii", "in-list", "no-trailing-space",
+        ],
+    )
+    def test_typst_hash_expr(self, input_text, expected):
+        """Typst hash expressions preserve the terminating space."""
+        assert format_line(input_text) == expected
 
-    def test_typst_hash_expr_multi_dotted(self):
-        """Hash expressions with multiple dotted fields preserve trailing space."""
-        assert format_line("#sym.icon.ballot 基底状態") == "#sym.icon.ballot 基底状態"
-
-    def test_typst_hash_simple_ident(self):
-        """Simple hash identifier preserves trailing space."""
-        assert format_line("#strong 太字テスト") == "#strong 太字テスト"
-
-    def test_typst_hash_with_parens(self):
-        """Hash expression with parentheses preserves trailing space."""
-        assert format_line("#text(red) 赤いテキスト") == "#text(red) 赤いテキスト"
-
-    def test_typst_hash_nested_parens(self):
-        """Nested parentheses inside hash expression arguments."""
-        assert (
-            format_line("#text(rgb(255, 0, 0)) 赤いテキスト")
-            == "#text(rgb(255, 0, 0)) 赤いテキスト"
-        )
-
-    def test_typst_hash_string_in_args(self):
-        """Quoted strings inside hash expression arguments."""
-        assert (
-            format_line('#set heading(numbering: "1.") 見出し')
-            == '#set heading(numbering: "1.") 見出し'
-        )
-
-    def test_typst_hash_before_ascii(self):
-        """Hash expression before ASCII — space already safe."""
-        assert format_line("#sym.ballot some text") == "#sym.ballot some text"
-
-    def test_typst_hash_in_list(self):
-        """Hash expression inside list item."""
-        assert (
-            format_line("+ #sym.ballot 基底状態の計算")
-            == "+ #sym.ballot 基底状態の計算"
-        )
-
-    def test_markdown_issue_ref_not_protected(self):
-        """#123 is a Markdown issue ref, not a Typst expression — space should collapse."""
-        assert format_line("Issue #123 の修正") == "Issue #123の修正"
-
-    def test_markdown_issue_ref_standalone(self):
-        """Bare #123 followed by CJK — still collapsed."""
-        assert format_line("#123 バグ") == "#123バグ"
-
-    def test_typst_hash_no_trailing_space(self):
-        """Hash expression without trailing space — nothing to protect."""
-        assert format_line("#sym.ballot") == "#sym.ballot"
-
-    def test_typst_hash_escaped_backslash_in_string(self):
-        r"""String ending with escaped backslash: "C:\\" — quote closes the string."""
-        assert (
-            format_line(r'#text("C:\\") 日本語')
-            == r'#text("C:\\") 日本語'
-        )
-
-    def test_typst_hash_actual_escaped_quote(self):
-        r"""String with escaped quote: "say \"hi\"" — quote does NOT close."""
-        assert (
-            format_line(r'#text("say \"hi\"") テスト')
-            == r'#text("say \"hi\"") テスト'
-        )
+    @pytest.mark.parametrize(
+        "input_text, expected",
+        [
+            ("Issue #123 の修正", "Issue #123の修正"),
+            ("#123 バグ", "#123バグ"),
+        ],
+        ids=["mid-sentence", "standalone"],
+    )
+    def test_markdown_issue_ref_not_protected(self, input_text, expected):
+        """Numeric #N tokens are not Typst expressions — space collapses normally."""
+        assert format_line(input_text) == expected
 
 
 class TestFormatText:

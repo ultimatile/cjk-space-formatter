@@ -53,25 +53,26 @@ def _scan_balanced_parens(text: str, i: int, n: int) -> int:
     depth = 1
     i += 1
     in_str = False
+    bs_run = 0  # length of current consecutive-backslash run
     while i < n and depth > 0:
         c = text[i]
-        if in_str:
-            if c == '"':
-                # Count consecutive backslashes immediately before this quote
-                num_bs = 0
-                j = i - 1
-                while j >= 0 and text[j] == "\\":
-                    num_bs += 1
-                    j -= 1
+        if c == '"':
+            if in_str:
                 # Quote is escaped only when preceded by an odd number of backslashes
-                if num_bs % 2 == 0:
+                if bs_run % 2 == 0:
                     in_str = False
-        elif c == '"':
-            in_str = True
-        elif c == "(":
-            depth += 1
-        elif c == ")":
-            depth -= 1
+            else:
+                in_str = True
+            bs_run = 0
+        elif c == "\\":
+            bs_run += 1
+        else:
+            bs_run = 0
+            if not in_str:
+                if c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
         i += 1
     return i
 
