@@ -41,7 +41,13 @@ def _scan_ident(text: str, i: int, n: int) -> int:
 
 
 def _scan_balanced_parens(text: str, i: int, n: int) -> int:
-    """Scan balanced parentheses, handling nesting and quoted strings."""
+    """Scan balanced parentheses, handling nesting and quoted strings.
+
+    Inside quoted strings, a closing ``"`` is only recognised when preceded
+    by an even number of backslashes (including zero).  This correctly
+    handles paths like ``"C:\\\\"`` where ``\\\\`` is an escaped backslash
+    and the following ``"`` genuinely closes the string.
+    """
     if i >= n or text[i] != "(":
         return i
     depth = 1
@@ -50,8 +56,16 @@ def _scan_balanced_parens(text: str, i: int, n: int) -> int:
     while i < n and depth > 0:
         c = text[i]
         if in_str:
-            if c == '"' and text[i - 1] != "\\":
-                in_str = False
+            if c == '"':
+                # Count consecutive backslashes immediately before this quote
+                num_bs = 0
+                j = i - 1
+                while j >= 0 and text[j] == "\\":
+                    num_bs += 1
+                    j -= 1
+                # Quote is escaped only when preceded by an odd number of backslashes
+                if num_bs % 2 == 0:
+                    in_str = False
         elif c == '"':
             in_str = True
         elif c == "(":

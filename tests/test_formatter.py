@@ -143,6 +143,20 @@ class TestFormatLine:
         """Hash expression without trailing space — nothing to protect."""
         assert format_line("#sym.ballot") == "#sym.ballot"
 
+    def test_typst_hash_escaped_backslash_in_string(self):
+        r"""String ending with escaped backslash: "C:\\" — quote closes the string."""
+        assert (
+            format_line(r'#text("C:\\") 日本語')
+            == r'#text("C:\\") 日本語'
+        )
+
+    def test_typst_hash_actual_escaped_quote(self):
+        r"""String with escaped quote: "say \"hi\"" — quote does NOT close."""
+        assert (
+            format_line(r'#text("say \"hi\"") テスト')
+            == r'#text("say \"hi\"") テスト'
+        )
+
 
 class TestFormatText:
     """Integration tests for multi-line text formatting."""
