@@ -62,7 +62,10 @@ class TestFormatLine:
 
     def test_typst_ref_ascii_after(self):
         """Space after @label before ASCII is already safe, verify no regression."""
-        assert format_line("see @eq:fidelity for details") == "see @eq:fidelity for details"
+        assert (
+            format_line("see @eq:fidelity for details")
+            == "see @eq:fidelity for details"
+        )
 
     def test_typst_ref_no_trailing_space(self):
         """@label at end of line (no trailing space) — nothing to protect."""
@@ -76,10 +79,7 @@ class TestFormatLine:
         assert format_line("定義: 任意の $U$ を考える") == "定義: 任意の$U$を考える"
 
     def test_typst_ref_multiple(self):
-        assert (
-            format_line("式 @eq:a と @eq:b を比較")
-            == "式@eq:a と@eq:b を比較"
-        )
+        assert format_line("式 @eq:a と @eq:b を比較") == "式@eq:a と@eq:b を比較"
 
     def test_hash_space_before_cjk_preserved(self):
         """Space after # before CJK must be preserved (Markdown heading / Typst command)."""
@@ -99,8 +99,14 @@ class TestFormatLine:
             ("#strong 太字テスト", "#strong 太字テスト"),
             # Parenthesised arguments (flat, nested, with strings)
             ("#text(red) 赤いテキスト", "#text(red) 赤いテキスト"),
-            ("#text(rgb(255, 0, 0)) 赤いテキスト", "#text(rgb(255, 0, 0)) 赤いテキスト"),
-            ('#set heading(numbering: "1.") 見出し', '#set heading(numbering: "1.") 見出し'),
+            (
+                "#text(rgb(255, 0, 0)) 赤いテキスト",
+                "#text(rgb(255, 0, 0)) 赤いテキスト",
+            ),
+            (
+                '#set heading(numbering: "1.") 見出し',
+                '#set heading(numbering: "1.") 見出し',
+            ),
             # Escaped backslashes / quotes inside strings
             (r'#text("C:\\") 日本語', r'#text("C:\\") 日本語'),
             (r'#text("say \"hi\"") テスト', r'#text("say \"hi\"") テスト'),
@@ -112,10 +118,17 @@ class TestFormatLine:
             ("#sym.ballot", "#sym.ballot"),
         ],
         ids=[
-            "dotted", "multi-dotted", "simple-ident",
-            "parens", "nested-parens", "keyword-string-args",
-            "escaped-backslash", "escaped-quote",
-            "before-ascii", "in-list", "no-trailing-space",
+            "dotted",
+            "multi-dotted",
+            "simple-ident",
+            "parens",
+            "nested-parens",
+            "keyword-string-args",
+            "escaped-backslash",
+            "escaped-quote",
+            "before-ascii",
+            "in-list",
+            "no-trailing-space",
         ],
     )
     def test_typst_hash_expr(self, input_text, expected):
@@ -148,8 +161,12 @@ class TestFormatText:
         assert format_text(text) == expected
 
     def test_real_world_line(self):
-        text = "任意の2量子ビットユニタリゲート $U in S U(4)$ を以下のように分解する：\n"
-        expected = "任意の2量子ビットユニタリゲート$U in S U(4)$を以下のように分解する：\n"
+        text = (
+            "任意の2量子ビットユニタリゲート $U in S U(4)$ を以下のように分解する：\n"
+        )
+        expected = (
+            "任意の2量子ビットユニタリゲート$U in S U(4)$を以下のように分解する：\n"
+        )
         assert format_text(text) == expected
 
     def test_block_math_with_hyphenated_label(self):
@@ -173,10 +190,6 @@ class TestFormatText:
             "ここで $A$ は行列。\n"
         )
         expected = (
-            "== 定義\n"
-            "\n"
-            "任意の$U$を分解する。\n"
-            "$ U = A B $ <def>\n"
-            "ここで$A$は行列。\n"
+            "== 定義\n\n任意の$U$を分解する。\n$ U = A B $ <def>\nここで$A$は行列。\n"
         )
         assert format_text(text) == expected

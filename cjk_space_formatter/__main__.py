@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import format_file, format_text
+from . import format_text
 
 
 def main() -> int:
