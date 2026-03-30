@@ -90,6 +90,33 @@ class TestFormatLine:
         assert format_line("## セクション") == "## セクション"
         assert format_line("### 見出し") == "### 見出し"
 
+    def test_typst_hash_expr_space_preserved(self):
+        """Space after #identifier.chain before CJK must be preserved."""
+        assert format_line("#sym.ballot 基底状態") == "#sym.ballot 基底状態"
+
+    def test_typst_hash_expr_dotted(self):
+        """Dotted hash expressions preserve trailing space."""
+        assert format_line("#sym.ballot 先行研究") == "#sym.ballot 先行研究"
+
+    def test_typst_hash_simple_ident(self):
+        """Simple hash identifier preserves trailing space."""
+        assert format_line("#strong 太字テスト") == "#strong 太字テスト"
+
+    def test_typst_hash_with_parens(self):
+        """Hash expression with parentheses preserves trailing space."""
+        assert format_line("#text(red) 赤いテキスト") == "#text(red) 赤いテキスト"
+
+    def test_typst_hash_before_ascii(self):
+        """Hash expression before ASCII — space already safe."""
+        assert format_line("#sym.ballot some text") == "#sym.ballot some text"
+
+    def test_typst_hash_in_list(self):
+        """Hash expression inside list item."""
+        assert (
+            format_line("+ #sym.ballot 基底状態の計算")
+            == "+ #sym.ballot 基底状態の計算"
+        )
+
 
 class TestFormatText:
     """Integration tests for multi-line text formatting."""

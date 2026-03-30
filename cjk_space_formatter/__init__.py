@@ -27,6 +27,10 @@ _PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w-]+>)?\s*$")
 _PAT_TYPST_PREFIX = re.compile(r"^(\s*(?:=+ |[-+] |\d+\. ))")
 # Typst label references: @label followed by space(s) — space terminates the label
 _PAT_TYPST_REF = re.compile(r"@[\w:.-]+ +")
+# Typst hash expressions: #identifier.chain followed by space(s)
+# e.g. #sym.ballot, #text(...), #set heading(...)
+# The trailing space terminates the expression and must be preserved.
+_PAT_TYPST_HASH = re.compile(r"#[\w.]+(?:\([^)]*\))? +")
 
 
 def _remove_cjk_spaces(text: str) -> str:
@@ -72,9 +76,21 @@ def format_line(line: str) -> str:
 
     processed = _PAT_TYPST_REF.sub(_save_ref, processed)
 
+    # Extract Typst hash expressions (with trailing space) to protect the space
+    # that terminates the expression from being removed
+    hash_blocks: list[str] = []
+
+    def _save_hash(m: re.Match) -> str:
+        hash_blocks.append(m.group(0))
+        return f"\x00H{len(hash_blocks) - 1}\x00"
+
+    processed = _PAT_TYPST_HASH.sub(_save_hash, processed)
+
     processed = _remove_cjk_spaces(processed)
 
-    # Restore @references, then math blocks
+    # Restore hash expressions, @references, then math blocks
+    for i, block in enumerate(hash_blocks):
+        processed = processed.replace(f"\x00H{i}\x00", block)
     for i, block in enumerate(ref_blocks):
         processed = processed.replace(f"\x00R{i}\x00", block)
     for i, block in enumerate(math_blocks):
