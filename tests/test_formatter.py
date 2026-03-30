@@ -94,9 +94,9 @@ class TestFormatLine:
         """Space after #identifier.chain before CJK must be preserved."""
         assert format_line("#sym.ballot 基底状態") == "#sym.ballot 基底状態"
 
-    def test_typst_hash_expr_dotted(self):
-        """Dotted hash expressions preserve trailing space."""
-        assert format_line("#sym.ballot 先行研究") == "#sym.ballot 先行研究"
+    def test_typst_hash_expr_multi_dotted(self):
+        """Hash expressions with multiple dotted fields preserve trailing space."""
+        assert format_line("#sym.icon.ballot 基底状態") == "#sym.icon.ballot 基底状態"
 
     def test_typst_hash_simple_ident(self):
         """Simple hash identifier preserves trailing space."""
