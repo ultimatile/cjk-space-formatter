@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+from importlib import metadata
 from pathlib import Path
 
 from . import format_text
@@ -11,6 +12,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         prog="cjk-space-formatter",
         description="Remove unnecessary spaces between CJK and non-CJK characters",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {metadata.version('cjk-space-formatter')}",
     )
     parser.add_argument("files", nargs="*", type=Path, help="files to format")
     parser.add_argument(
