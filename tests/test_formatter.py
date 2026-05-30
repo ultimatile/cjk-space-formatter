@@ -147,6 +147,57 @@ class TestFormatLine:
         """Numeric #N tokens are not Typst expressions — space collapses normally."""
         assert format_line(input_text) == expected
 
+    @pytest.mark.parametrize(
+        "input_text, expected",
+        [
+            # Ordered-list markers preceding CJK keep their trailing space at a
+            # structural position: line start, optionally behind heading / list
+            # prefixes (Markdown #, Typst =, bullets - +), including indentation.
+            ("## 1. あわわわわ", "## 1. あわわわわ"),
+            ("# 1. あわわわわ", "# 1. あわわわわ"),
+            ("== 1. あ", "== 1. あ"),
+            ("- 1. あわわわわ", "- 1. あわわわわ"),
+            ("+ 1. あ", "+ 1. あ"),
+            ("1. あわわわわ", "1. あわわわわ"),
+            ("12. あ", "12. あ"),
+            ("  - 1. あ", "  - 1. あ"),
+            # Non-structural positions are ordinary text: a marker mid-line, a
+            # prose figure / step number, version strings, decimals, issue
+            # references, and bare periods all collapse the space before CJK.
+            ("あ 1. ほげ", "あ1.ほげ"),
+            ("Fig. 1. 図", "Fig. 1.図"),
+            ("Step 1. 手順", "Step 1.手順"),
+            ("v2. あ", "v2.あ"),
+            ("Q1. 設問", "Q1.設問"),
+            ("3.14. あ", "3.14.あ"),
+            ("1.5 個", "1.5個"),
+            ("Fig. 図", "Fig.図"),
+            ("#1. バグ", "#1.バグ"),
+        ],
+        ids=[
+            "heading-nested",
+            "single-hash-nested",
+            "typst-heading-nested",
+            "bullet-nested",
+            "plus-bullet-nested",
+            "line-start",
+            "multi-digit",
+            "indented-nested",
+            "mid-line",
+            "prose-figure-number",
+            "prose-step-number",
+            "version-string",
+            "label-Q1",
+            "multi-dot",
+            "decimal",
+            "non-digit-period",
+            "issue-ref",
+        ],
+    )
+    def test_ordered_marker_space(self, input_text, expected):
+        """Space after an ordered-list marker before CJK is preserved only at structural positions."""
+        assert format_line(input_text) == expected
+
 
 class TestFormatText:
     """Integration tests for multi-line text formatting."""

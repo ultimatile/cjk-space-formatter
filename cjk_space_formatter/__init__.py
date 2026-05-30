@@ -27,6 +27,14 @@ _PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w-]+>)?\s*$")
 _PAT_TYPST_PREFIX = re.compile(r"^(\s*(?:=+ |[-+] |\d+\. ))")
 # Typst label references: @label followed by space(s) — space terminates the label
 _PAT_TYPST_REF = re.compile(r"@[\w:.-]+ +")
+# Ordered-list markers ("1. ") preceding CJK, whose trailing space must be
+# preserved. A marker is only recognised at a structural position: the start of
+# the line, optionally behind heading / list prefixes ("## 1. あ", "- 1. あ").
+# Anchoring to structure (rather than any token boundary) keeps prose numbers
+# such as "Fig. 1. 図", version strings ("v2. ") and issue references ("#1. ")
+# as ordinary text, matching how AST-based formatters treat list markers as
+# syntax distinct from inline text.
+_PAT_ORDERED_MARKER = re.compile(rf"^\s*(?:(?:#+|=+|[-+]) )*\d+\. +(?={_CJK})")
 
 
 # Typst keywords that take a following expression (e.g. #set heading(...))
@@ -180,11 +188,23 @@ def format_line(line: str) -> str:
     # Extract Typst hash expressions (with trailing space)
     processed, hash_blocks = _extract_typst_hash(processed)
 
+    # Extract ordered-list markers (with trailing space) to protect the space
+    # that separates the marker from following CJK text
+    marker_blocks: list[str] = []
+
+    def _save_marker(m: re.Match) -> str:
+        marker_blocks.append(m.group(0))
+        return f"\x00O{len(marker_blocks) - 1}\x00"
+
+    processed = _PAT_ORDERED_MARKER.sub(_save_marker, processed)
+
     processed = _remove_cjk_spaces(processed)
 
-    # Restore hash expressions, @references, then math blocks
+    # Restore hash expressions, markers, @references, then math blocks
     for i, block in enumerate(hash_blocks):
         processed = processed.replace(f"\x00H{i}\x00", block)
+    for i, block in enumerate(marker_blocks):
+        processed = processed.replace(f"\x00O{i}\x00", block)
     for i, block in enumerate(ref_blocks):
         processed = processed.replace(f"\x00R{i}\x00", block)
     for i, block in enumerate(math_blocks):
