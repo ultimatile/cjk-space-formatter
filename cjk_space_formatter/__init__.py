@@ -29,9 +29,10 @@ _PAT_TYPST_PREFIX = re.compile(r"^(\s*(?:=+ |[-+] |\d+\. ))")
 _PAT_TYPST_REF = re.compile(r"@[\w:.-]+ +")
 # Ordered-list markers ("1. ") preceding CJK, whose trailing space must be
 # preserved regardless of line position (e.g. "## 1. あ", "- 1. あ"). Only a
-# digit run starting at a token boundary counts, so version strings ("v2. ")
-# and decimals ("3.14. ") are still treated as ordinary text and collapsed.
-_PAT_ORDERED_MARKER = re.compile(rf"(?<![\w.])\d+\. +(?={_CJK})")
+# digit run starting at a token boundary counts, so version strings ("v2. "),
+# decimals ("3.14. ") and issue references ("#1. ") are still treated as
+# ordinary text and collapsed.
+_PAT_ORDERED_MARKER = re.compile(rf"(?<![\w.#])\d+\. +(?={_CJK})")
 
 
 # Typst keywords that take a following expression (e.g. #set heading(...))

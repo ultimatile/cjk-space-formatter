@@ -166,6 +166,8 @@ class TestFormatLine:
             ("1.5 個", "1.5個"),
             # Periods not preceded by a digit are unaffected.
             ("Fig. 図", "Fig.図"),
+            # Issue references (#N) are ordinary text, not list markers.
+            ("#1. バグ", "#1.バグ"),
         ],
         ids=[
             "heading-nested",
@@ -179,6 +181,7 @@ class TestFormatLine:
             "multi-dot",
             "decimal",
             "non-digit-period",
+            "issue-ref",
         ],
     )
     def test_ordered_marker_space(self, input_text, expected):
