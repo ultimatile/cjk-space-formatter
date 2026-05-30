@@ -28,11 +28,13 @@ _PAT_TYPST_PREFIX = re.compile(r"^(\s*(?:=+ |[-+] |\d+\. ))")
 # Typst label references: @label followed by space(s) — space terminates the label
 _PAT_TYPST_REF = re.compile(r"@[\w:.-]+ +")
 # Ordered-list markers ("1. ") preceding CJK, whose trailing space must be
-# preserved regardless of line position (e.g. "## 1. あ", "- 1. あ"). Only a
-# digit run starting at a token boundary counts, so version strings ("v2. "),
-# decimals ("3.14. ") and issue references ("#1. ") are still treated as
-# ordinary text and collapsed.
-_PAT_ORDERED_MARKER = re.compile(rf"(?<![\w.#])\d+\. +(?={_CJK})")
+# preserved. A marker is only recognised at a structural position: the start of
+# the line, optionally behind heading / list prefixes ("## 1. あ", "- 1. あ").
+# Anchoring to structure (rather than any token boundary) keeps prose numbers
+# such as "Fig. 1. 図", version strings ("v2. ") and issue references ("#1. ")
+# as ordinary text, matching how AST-based formatters treat list markers as
+# syntax distinct from inline text.
+_PAT_ORDERED_MARKER = re.compile(rf"^\s*(?:(?:#+|=+|[-+]) )*\d+\. +(?={_CJK})")
 
 
 # Typst keywords that take a following expression (e.g. #set heading(...))
