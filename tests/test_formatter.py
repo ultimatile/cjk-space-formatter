@@ -147,6 +147,44 @@ class TestFormatLine:
         """Numeric #N tokens are not Typst expressions — space collapses normally."""
         assert format_line(input_text) == expected
 
+    @pytest.mark.parametrize(
+        "input_text, expected",
+        [
+            # Ordered-list markers preceding CJK keep their trailing space,
+            # even when nested inside a heading or bullet (not at line start).
+            ("## 1. あわわわわ", "## 1. あわわわわ"),
+            ("# 1. あわわわわ", "# 1. あわわわわ"),
+            ("- 1. あわわわわ", "- 1. あわわわわ"),
+            ("1. あわわわわ", "1. あわわわわ"),
+            ("12. あ", "12. あ"),
+            ("あ 1. ほげ", "あ1. ほげ"),
+            # Non-marker digit-period tokens are ordinary text and collapse.
+            ("v2. あ", "v2.あ"),
+            ("Q1. 設問", "Q1.設問"),
+            ("3.14. あ", "3.14.あ"),
+            # Decimals stay collapsed (digit adjacent to CJK, no marker space).
+            ("1.5 個", "1.5個"),
+            # Periods not preceded by a digit are unaffected.
+            ("Fig. 図", "Fig.図"),
+        ],
+        ids=[
+            "heading-nested",
+            "single-hash-nested",
+            "bullet-nested",
+            "line-start",
+            "multi-digit",
+            "mid-line",
+            "version-string",
+            "label-Q1",
+            "multi-dot",
+            "decimal",
+            "non-digit-period",
+        ],
+    )
+    def test_ordered_marker_space(self, input_text, expected):
+        """Space after an ordered-list marker before CJK is preserved position-independently."""
+        assert format_line(input_text) == expected
+
 
 class TestFormatText:
     """Integration tests for multi-line text formatting."""
