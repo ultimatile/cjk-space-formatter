@@ -78,6 +78,19 @@ cat file.typ | cjk-space-formatter
 | After Typst `#expr` | `#sym.ballot 基底` | Space terminates expression |
 | After Typst `@label` | `@eq:cost の計算` | Space terminates label reference |
 
+## Alternatives
+
+Several tools touch CJK / half-width spacing; they differ by **direction** (add vs remove) and **target**:
+
+| Tool | Direction | Target |
+|---|---|---|
+| [pangu](https://github.com/vinta/pangu.js) | adds spaces | HTML / plain text (not for markup) |
+| [Prettier](https://github.com/prettier/prettier/issues/6385) | adds in Markdown by default (configurable) | code / Markdown |
+| [textlint](https://github.com/textlint/textlint) + [textlint-plugin-typst](https://github.com/textlint/textlint-plugin-typst) | removes (`--fix`able) | Markdown / Typst / text |
+| **cjk-space-formatter** | removes | Typst / Markdown source |
+
+The closest overlap is textlint with its Typst plugin. This tool instead keeps its exception set — math `$...$`, Typst `@label` / `#…`, list markers — under the formatter's own control and ships as a zero-dependency Python CLI, rather than depending on a plugin's AST coverage.
+
 ## Library API
 
 ```python
