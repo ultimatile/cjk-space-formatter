@@ -22,14 +22,6 @@ Primarily targets Typst files, but also works with Markdown and other formats us
 uv tool install git+https://github.com/ultimatile/cjk-space-formatter
 ```
 
-For development:
-
-```bash
-git clone https://github.com/ultimatile/cjk-space-formatter
-cd cjk-space-formatter
-uv sync --dev
-```
-
 ## Usage
 
 ```bash
@@ -111,6 +103,11 @@ changed = format_file(Path("file.typ"), check=True)
 ## Development
 
 ```bash
+git clone https://github.com/ultimatile/cjk-space-formatter
+cd cjk-space-formatter
+uv sync --dev
+
+# Run tests
 uv run --dev pytest tests/ -v
 ```
 
