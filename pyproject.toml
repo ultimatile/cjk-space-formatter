@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[tool.uv]  
+default-groups = []
+
 [project.scripts]
 cjk-space-formatter = "cjk_space_formatter.__main__:main"
 

@@ -105,10 +105,10 @@ changed = format_file(Path("file.typ"), check=True)
 ```bash
 git clone https://github.com/ultimatile/cjk-space-formatter
 cd cjk-space-formatter
-uv sync
+uv sync --dev
 
 # Run tests
-uv run pytest tests/ -v
+uv run --dev pytest tests/ -v
 ```
 
 ## License
