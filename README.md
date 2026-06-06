@@ -78,6 +78,21 @@ cat file.typ | cjk-space-formatter
 | After Typst `#expr`            | `#sym.ballot 基底`  | Space terminates expression                             |
 | After Typst `@label`           | `@eq:cost の計算`   | Space terminates label reference                        |
 
+## Known limitations
+
+### Underscore emphasis adjacent to CJK breaks
+
+The formatter removes the spaces around any Markdown emphasis it does not recognise as a protected pattern. For asterisk emphasis this is safe — CommonMark allows `*`/`**` to open and close intraword, so `山田 **太郎** は` → `山田**太郎**は` still renders `太郎` bold. Underscore emphasis is different: CommonMark forbids `_`/`__` from opening or closing inside a "word", and CJK characters count as word characters. Removing the spaces therefore strips the emphasis:
+
+| Input (after formatting) | Rendered                         |
+| ------------------------ | -------------------------------- |
+| `山田**太郎**は`         | `山田<strong>太郎</strong>は` ✓  |
+| `山田*太郎*は`           | `山田<em>太郎</em>は` ✓          |
+| `山田_太郎_は`           | `山田_太郎_は` (literal `_`) ✗   |
+| `山田__太郎__は`         | `山田__太郎__は` (literal `_`) ✗ |
+
+The formatter does not parse emphasis markers, so it cannot tell underscore emphasis apart from a stray underscore. If your source uses `_`/`__` for emphasis around CJK, switch to `*`/`**`, or keep the surrounding spaces and exclude those lines.
+
 ## Alternatives
 
 Several tools touch CJK / half-width spacing; they differ by **direction** (add vs remove) and **target**:
