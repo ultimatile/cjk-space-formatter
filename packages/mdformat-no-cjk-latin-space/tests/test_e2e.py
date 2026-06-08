@@ -6,6 +6,7 @@ typst-cjk-latin-space-remover's suite; keep the two in lockstep.
 """
 
 import mdformat
+from markdown_it import MarkdownIt
 
 
 def fmt(md: str) -> str:
@@ -48,3 +49,36 @@ def test_block_math_boundary():
 
 def test_pure_ascii_unchanged():
     assert fmt("Hello World\n") == "Hello World\n"
+
+
+def test_fold_across_asterisk_strong():
+    assert fmt("日本語 **English** テスト\n") == "日本語**English**テスト\n"
+
+
+def test_fold_across_asterisk_em():
+    assert fmt("日本語 *English* テスト\n") == "日本語*English*テスト\n"
+
+
+def test_underscore_emphasis_preserved():
+    """Folding underscore emphasis would make the markers literal — so don't.
+
+    CommonMark forbids `_`/`__` from opening/closing intraword and CJK count as
+    word characters; `日本語_English_テスト` renders the underscores literally.
+    The space is therefore kept, unlike asterisk emphasis which folds safely.
+    """
+    assert fmt("日本語 _English_ テスト\n") == "日本語 _English_ テスト\n"
+    assert fmt("日本語 __English__ テスト\n") == "日本語 __English__ テスト\n"
+
+
+def test_folded_asterisk_emphasis_still_renders():
+    """Safety invariant: folding must not break the emphasis it folds across."""
+    rendered = MarkdownIt().render(fmt("日本語 **English** テスト\n"))
+    assert "<strong>English</strong>" in rendered
+
+
+def test_fold_across_link():
+    assert fmt("日本語 [English](x) テスト\n") == "日本語[English](x)テスト\n"
+
+
+def test_fold_across_image():
+    assert fmt("日本語 ![alt](x) テスト\n") == "日本語![alt](x)テスト\n"

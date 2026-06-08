@@ -201,7 +201,9 @@ def format_line(line: str) -> str:
 
     processed = squash(processed)
 
-    # Restore in reverse extraction order: hash, marker, ref, math, raw.
+    # Restore every sentinel kind. Each placeholder is `\x00<letter><i>\x00` with
+    # a distinct letter and `\x00` never occurs in restored content, so the kinds
+    # are independent and the restore order does not affect the result.
     for i, block in enumerate(hash_blocks):
         processed = processed.replace(f"\x00H{i}\x00", block)
     for i, block in enumerate(marker_blocks):

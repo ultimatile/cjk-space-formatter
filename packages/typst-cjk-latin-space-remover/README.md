@@ -36,3 +36,10 @@ cat your.typ | typst-cjk-latin-space-remover  # stdin -> stdout
 The half-width colon is preserved (`注: これは`). Pathological raw blocks (rare
 nesting, multi-backtick inline raw, info strings) are out of scope; the common
 fence and span forms are the contract.
+
+The hash-expression scanner protects an expression's head and its terminating
+space, not arbitrary code-mode bodies. A space *inside* a `#let` / `#show` value
+— a string or content block such as `#let x = "日本 語"` — is not protected and
+may be collapsed. Protecting it correctly would require a real Typst parser,
+which this tool deliberately avoids. Keep CJK-adjacent spaces out of code-mode
+string/content literals, or guard those lines.

@@ -31,6 +31,14 @@ mdformat your.md          # the plugin is auto-discovered once installed
 ## Behaviour & non-goals
 
 - The half-width colon is preserved (`注: これは` stays), as correct prose typography.
+- Spaces are folded across emphasis (`**…**` / `*…*`), links and images, but
+  **not** across underscore emphasis (`_…_` / `__…__`): CommonMark forbids `_`
+  from opening or closing intraword and CJK count as word characters, so dropping
+  the space there would turn the markers literal. Use `*` for emphasis around CJK.
+- The plugin runs under mdformat's default `wrap = "keep"`. With `wrap` set to
+  `"no"` or a width, mdformat replaces spaces with internal wrap points before
+  the plugin sees the text, so the plugin no-ops (it does not corrupt — it simply
+  makes no change). Keep the default `wrap` to use this plugin.
 - mdformat **re-formats the whole document**, not only the spaces this plugin
   targets. If you need surgical edits, this is not the right tool.
 - Pathological inputs are out of scope; the parser's span model is the contract.

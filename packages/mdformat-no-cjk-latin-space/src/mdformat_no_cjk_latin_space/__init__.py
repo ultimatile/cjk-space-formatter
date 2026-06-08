@@ -6,9 +6,11 @@ escapes and run-length corner cases that plagued the old regex passes is "free"
 here because the parser hands us those as opaque inline tokens — we never see
 their interior, so we never touch it.
 
-The core `squash` handles spaces *within* a plain text run. Spaces straddling a
-text/protected-token boundary live on the text node's edge (the protected token
-is a separate sibling), so they are folded here using the node's siblings.
+The core `squash` handles spaces *within* a plain text run. A space straddling
+the boundary between a text run and an adjacent inline node lives on the text
+node's edge (the node is a separate sibling), so it is folded here using the
+node's siblings — see `_folds_across` for which siblings a boundary space
+collapses across and the one emphasis case it must not.
 """
 
 import re
@@ -19,17 +21,35 @@ from ._core import CJK_CLASS, squash
 
 _CJK = f"[{CJK_CLASS}]"
 # CJK followed by trailing space(s) at a run's end — collapsed when the next
-# sibling is a protected token (the space straddles the token boundary).
+# sibling is a node a boundary space folds across (see `_folds_across`).
 _TRAIL_CJK = re.compile(f"({_CJK}) +$")
 # Leading space(s) before CJK at a run's start — collapsed when the previous
-# sibling is a protected token.
+# sibling folds (see `_folds_across`).
 _LEAD_CJK = re.compile(f"^ +(?={_CJK})")
 
-# Inline tokens that are opaque protected spans: a CJK-adjacent space at the
-# boundary with one of these collapses, exactly as if it abutted a non-space
-# character. Fences and indented code never reach the `text` postprocessor at
-# all — the parser keeps their content out of text nodes entirely.
+# Opaque protected spans: a CJK-adjacent boundary space collapses across one of
+# these exactly as if it abutted a non-space character. Fences and indented code
+# never reach the `text` postprocessor at all — the parser keeps their content
+# out of text nodes entirely.
 _PROTECTED = {"code_inline", "math_inline", "math_block"}
+# Transparent inline containers a boundary space also folds across: links and
+# images carry no intraword restriction, so dropping the space is always safe.
+_TRANSPARENT = {"link", "image"}
+# Emphasis is conditional. CommonMark forbids `_`/`__` from opening or closing
+# intraword, and CJK count as word characters, so folding a space around
+# underscore emphasis would turn the markers literal (日本語 _x_ -> 日本語_x_
+# renders the underscores). Asterisk emphasis has no such restriction; mdformat
+# preserves the source marker, so a folded `*`/`**` stays valid on output.
+_EMPHASIS = {"em", "strong"}
+
+
+def _folds_across(sibling) -> bool:
+    """Whether a CJK-adjacent boundary space collapses across this sibling."""
+    if sibling.type in _PROTECTED or sibling.type in _TRANSPARENT:
+        return True
+    if sibling.type in _EMPHASIS:
+        return bool(sibling.markup) and all(c == "*" for c in sibling.markup)
+    return False
 
 
 def update_mdit(mdit):
@@ -48,15 +68,15 @@ def _render_math_block(node, context):
 
 
 def _text_postprocess(text, node, context):
-    """Squash within the run, then fold spaces straddling protected boundaries."""
+    """Squash within the run, then fold spaces straddling a foldable boundary."""
     out = squash(text)
     nxt = node.next_sibling
-    if nxt is not None and nxt.type in _PROTECTED:
+    if nxt is not None and _folds_across(nxt):
         m = _TRAIL_CJK.search(out)
         if m:
             out = out[: m.start() + 1]
     prv = node.previous_sibling
-    if prv is not None and prv.type in _PROTECTED:
+    if prv is not None and _folds_across(prv):
         out = _LEAD_CJK.sub("", out)
     return out
 
