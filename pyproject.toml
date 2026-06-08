@@ -1,17 +1,26 @@
-[project]
-name = "cjk-space-formatter"
-version = "0.2.0"
-description = "Remove unnecessary spaces between CJK and non-CJK characters in Typst/Markdown files"
-readme = "README.md"
-requires-python = ">=3.11"
-dependencies = []
+# uv workspace root (virtual — not itself a package).
+#
+# Layout rationale: the published surface is two packages, not two
+# repos. They share a core, so a monorepo keeps a single source of truth and
+# atomic changes; independent PyPI release cycles are still possible per package.
+#
+#   packages/mdformat-no-cjk-latin-space/   # PyPI
+#   packages/typst-cjk-latin-space-remover/ # PyPI
+#   core/                                   # cjk-latin-space core (build-time vendored, not published)
+#   conformance/                            # pure-run core corpus (target-independent)
 
-[project.scripts]
-cjk-space-formatter = "cjk_space_formatter.__main__:main"
+[tool.uv.workspace]
+members = ["packages/*", "core"]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "pytest>=8.0",
+    "cjk-latin-space",
+    "mdformat-no-cjk-latin-space",
+    "typst-cjk-latin-space-remover",
+]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.uv.sources]
+cjk-latin-space = { workspace = true }
+mdformat-no-cjk-latin-space = { workspace = true }
+typst-cjk-latin-space-remover = { workspace = true }

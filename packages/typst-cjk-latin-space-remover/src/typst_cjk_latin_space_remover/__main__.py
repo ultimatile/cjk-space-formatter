@@ -1,4 +1,4 @@
-"""CLI entry point for cjk-space-formatter."""
+"""CLI entry point for typst-cjk-latin-space-remover."""
 
 import argparse
 import sys
@@ -10,14 +10,14 @@ from . import format_text
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        prog="cjk-space-formatter",
-        description="Remove unnecessary spaces between CJK and non-CJK characters",
+        prog="typst-cjk-latin-space-remover",
+        description="Remove unnecessary spaces between CJK and Latin/digits in Typst files",
     )
     parser.add_argument(
         "-V",
         "--version",
         action="version",
-        version=f"%(prog)s {metadata.version('cjk-space-formatter')}",
+        version=f"%(prog)s {metadata.version('typst-cjk-latin-space-remover')}",
     )
     parser.add_argument("files", nargs="*", type=Path, help="files to format")
     parser.add_argument(
