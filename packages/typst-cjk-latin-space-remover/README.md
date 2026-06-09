@@ -38,9 +38,12 @@ nesting, multi-backtick inline raw, info strings) are out of scope; the common
 fence and span forms are the contract.
 
 Block math and block raw are detected line by line, not by a full Typst parser,
-so constructs that break the line heuristic are out of scope: a line comment
-trailing a math close line (`$ <label> // note`), or a fence-like line
-(```` ``` ````) sitting inside a `/* … */` block comment, can leave the detector
+so constructs that break the line heuristic are out of scope. A block-math close
+`$` must sit on its own line: a `$` that closes at the end of a content line
+(`$ a +` … `  b $`) is not detected, so the following lines stay unformatted
+(the math itself is left intact — the failure under-formats, it never corrupts).
+A line comment trailing a close line (`$ <label> // note`), or a fence-like line
+(```` ``` ````) inside a `/* … */` block comment, can likewise leave the detector
 in the wrong state. Keep such constructs out of the files you format.
 
 The hash-expression scanner protects an expression's head and its terminating

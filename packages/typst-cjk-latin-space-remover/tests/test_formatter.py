@@ -208,6 +208,17 @@ class TestFormatText:
         expected = "$ a +\n  日 本\n$\n後text\n"
         assert format_text(text) == expected
 
+    def test_single_line_block_math_with_trailing_text_resumes(self):
+        """`$ x $ text` closes on its own line; it must not enter block state.
+
+        The math closes at the second `$`, so the line is self-contained and the
+        following lines must still be formatted (entering block-math state here
+        would swallow the rest of the file).
+        """
+        text = "$ x $ trailing\n後 text\n"
+        expected = "$ x $ trailing\n後text\n"
+        assert format_text(text) == expected
+
     def test_block_math_with_colon_label_resumes(self):
         """A colon in the close label must still be recognised as the closer.
 

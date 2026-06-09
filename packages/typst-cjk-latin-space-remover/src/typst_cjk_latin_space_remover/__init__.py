@@ -26,10 +26,6 @@ _PAT_INLINE_RAW = re.compile(r"`[^`\n]+`")
 # `<eq:fidelity>`, so a narrower class would fail to detect the close line and
 # leave the rest of the file stuck inside the block-math state.
 _PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w:.-]+>)?\s*$")
-# Self-contained single-line block math: opens with "$ " and also closes with a
-# "$" on the same line (optionally followed by a label). Distinguishes a one-line
-# `$ x = 1 $` from a multi-line opener `$ a +` whose body must be protected.
-_PAT_BLOCK_MATH_SINGLE = re.compile(r"^\$ .*\$\s*(<[\w:.-]+>)?\s*$")
 # Block raw fence: a line whose first non-space content is a run of >=3 backticks.
 _PAT_RAW_FENCE = re.compile(r"^\s*(`{3,})")
 # Typst structural prefixes whose trailing space must be preserved (headings,
@@ -269,17 +265,19 @@ def format_text(text: str) -> str:
                 raw_fence_len = fence_len
             continue
 
-        # Block math: a bare "$" opens a multi-line block. A "$ ..." line is
-        # self-contained only if it also closes on the same line ("$ x $",
-        # optionally with a label); a "$ ..." whose math continues on later
-        # lines opens a multi-line block whose body must be left untouched.
+        # Block math: a bare "$" opens a multi-line block. A "$ ..." line opens a
+        # multi-line block only if the math does NOT close on the same line — a
+        # second "$" after the opener closes it here ("$ x $", even with trailing
+        # text), so such a line is self-contained and must not enter the state
+        # (which would otherwise swallow the rest of the file). Detecting the
+        # close on a *later* content line is a documented non-goal.
         if stripped == "$":
             result.append(line)
             in_block_math = True
             continue
         if stripped.startswith("$ "):
             result.append(line)
-            if not _PAT_BLOCK_MATH_SINGLE.match(stripped):
+            if "$" not in stripped[2:]:
                 in_block_math = True
             continue
 
