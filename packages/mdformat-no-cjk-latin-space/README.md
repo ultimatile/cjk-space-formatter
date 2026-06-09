@@ -35,6 +35,11 @@ mdformat your.md          # the plugin is auto-discovered once installed
   **not** across underscore emphasis (`_…_` / `__…__`): CommonMark forbids `_`
   from opening or closing intraword and CJK count as word characters, so dropping
   the space there would turn the markers literal. Use `*` for emphasis around CJK.
+- **Known gap:** folding is currently one-sided — a CJK-adjacent space is removed
+  only when the CJK is in the surrounding text run, not when it sits *inside*
+  emphasis/link markup, so `Foo **設定** bar` keeps its spaces. This is an
+  incomplete realization of the CJK-ambient rule (not an intentional asymmetry);
+  it is tracked for a follow-up and rarely bites genuinely CJK-ambient text.
 - The plugin runs under mdformat's default `wrap = "keep"`. With `wrap` set to
   `"no"` or a width, mdformat replaces spaces with internal wrap points before
   the plugin sees the text, so the plugin no-ops (it does not corrupt — it simply

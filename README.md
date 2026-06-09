@@ -11,6 +11,16 @@ spacing.
 ->  任意の2量子ビットユニタリゲート$U in S U(4)$を分解する
 ```
 
+## Scope: CJK-ambient text
+
+These tools assume the surrounding text is **CJK-ambient** — Japanese (or other
+CJK) prose with the occasional Latin word, math, or code. Under that assumption
+every space adjacent to a CJK character is unwanted and removed. If your document
+is *Latin-ambient* — English prose with the occasional CJK word — you do not want
+this tool: there the spaces are correct Latin word separation. The tools do not
+detect ambient language; feeding them Latin-ambient text will strip spaces that
+should stay.
+
 ## Which tool do you want?
 
 The spaces are easy; the hard part is **not touching** math, code, and other
