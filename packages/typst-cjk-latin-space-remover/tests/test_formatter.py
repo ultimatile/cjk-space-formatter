@@ -197,6 +197,17 @@ class TestFormatText:
         expected = "テスト\n$\n  V^T N V\n$ <euler-zyz>\n次の行\n"
         assert format_text(text) == expected
 
+    def test_multiline_block_math_opener_with_content(self):
+        """A `$ …` opener whose math continues on later lines protects the body.
+
+        `$ a +` does not close on its own line, so it opens a multi-line block;
+        the `日 本` inside must be left untouched and formatting must resume only
+        after the closing `$`.
+        """
+        text = "$ a +\n  日 本\n$\n後 text\n"
+        expected = "$ a +\n  日 本\n$\n後text\n"
+        assert format_text(text) == expected
+
     def test_block_math_with_colon_label_resumes(self):
         """A colon in the close label must still be recognised as the closer.
 
