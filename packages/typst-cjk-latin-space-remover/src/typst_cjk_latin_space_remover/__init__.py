@@ -21,8 +21,11 @@ _PAT_INLINE_MATH = re.compile(r"\$[^$]*\$")
 # inline raw is a documented non-goal. A block fence (>=3 backticks on its own
 # line) is intercepted by the line state machine before reaching here.
 _PAT_INLINE_RAW = re.compile(r"`[^`\n]+`")
-# Block math closer: just $ with optional Typst label
-_PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w-]+>)?\s*$")
+# Block math closer: just $ with optional Typst label. Label characters mirror
+# the `@ref` class (`[\w:.-]`): Typst labels routinely carry colons / dots, e.g.
+# `<eq:fidelity>`, so a narrower class would fail to detect the close line and
+# leave the rest of the file stuck inside the block-math state.
+_PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w:.-]+>)?\s*$")
 # Block raw fence: a line whose first non-space content is a run of >=3 backticks.
 _PAT_RAW_FENCE = re.compile(r"^\s*(`{3,})")
 # Typst structural prefixes whose trailing space must be preserved (headings,

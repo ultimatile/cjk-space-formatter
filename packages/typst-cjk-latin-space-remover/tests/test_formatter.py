@@ -197,6 +197,17 @@ class TestFormatText:
         expected = "テスト\n$\n  V^T N V\n$ <euler-zyz>\n次の行\n"
         assert format_text(text) == expected
 
+    def test_block_math_with_colon_label_resumes(self):
+        """A colon in the close label must still be recognised as the closer.
+
+        Typst labels routinely carry colons (`<eq:fidelity>`, matching `@eq:…`
+        refs). If the closer is missed, every later line stays stuck inside the
+        block-math state and is never formatted.
+        """
+        text = "前 text\n$\n  A B\n$ <eq:fidelity>\n後 text\n"
+        expected = "前text\n$\n  A B\n$ <eq:fidelity>\n後text\n"
+        assert format_text(text) == expected
+
     def test_no_cjk_text_unchanged(self):
         text = "Hello World\n$ x = 1 $\nfoo bar\n"
         assert format_text(text) == text
