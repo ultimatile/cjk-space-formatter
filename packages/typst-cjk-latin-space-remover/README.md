@@ -37,6 +37,12 @@ The half-width colon is preserved (`注: これは`). Pathological raw blocks (r
 nesting, multi-backtick inline raw, info strings) are out of scope; the common
 fence and span forms are the contract.
 
+Block math and block raw are detected line by line, not by a full Typst parser,
+so constructs that break the line heuristic are out of scope: a line comment
+trailing a math close line (`$ <label> // note`), or a fence-like line
+(```` ``` ````) sitting inside a `/* … */` block comment, can leave the detector
+in the wrong state. Keep such constructs out of the files you format.
+
 The hash-expression scanner protects an expression's head and its terminating
 space, not arbitrary code-mode bodies. A space *inside* a `#let` / `#show` value
 — a string or content block such as `#let x = "日本 語"` — is not protected and
