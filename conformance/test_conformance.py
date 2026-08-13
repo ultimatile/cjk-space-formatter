@@ -24,6 +24,9 @@ CASES = [
     # Half-width colon is the sole exception: space after it before CJK stays.
     ("注: これはテスト", "注: これはテスト"),
     ("定義: 任意の", "定義: 任意の"),
+    # The exception is one-directional — it covers the space *after* the colon,
+    # so a space between CJK and a following colon still collapses.
+    ("見出し : 値", "見出し: 値"),
     # Pure ASCII / pure CJK are untouched.
     ("Weyl chamber theorem", "Weyl chamber theorem"),
     ("Hello World", "Hello World"),

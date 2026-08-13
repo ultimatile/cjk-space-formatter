@@ -8,12 +8,13 @@ their interior, so we never touch it.
 
 That protection reaches exactly as far as the enabled extension set. A construct
 no enabled extension parses arrives as ordinary paragraph text, and a space that
-construct uses as a *delimiter* is then indistinguishable from prose spacing —
-GFM task lists, autolink literals and tables are the reachable cases, which is
-why `mdformat-gfm` is a hard dependency. It only makes `gfm` and `tables`
-available, though: a caller that narrows the extension set (the `extensions=`
-argument, `--extensions`, or `.mdformat.toml`) must name them alongside this
-plugin, or those constructs lose their protection again.
+construct uses as a *delimiter* is then indistinguishable from prose spacing.
+`mdformat-gfm` is a hard dependency because it closes that hole for GFM task
+lists, autolink literals and tables; constructs from dialects nothing here
+parses stay exposed. The dependency only makes `gfm` and `tables` available,
+though: a caller that narrows the extension set (the `extensions=` argument,
+`--extensions`, or `.mdformat.toml`) must name them alongside this plugin, or
+even those constructs lose their protection again.
 
 The core `squash` handles spaces *within* a plain text run. A space straddling
 the boundary between a text run and an adjacent inline node lives on the text
