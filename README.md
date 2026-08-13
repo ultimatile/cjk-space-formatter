@@ -28,30 +28,37 @@ spans where a space is meaningful. Markdown and Typst protect different spans in
 different ways, so this repo ships **two** tools rather than one tool that half-
 serves both:
 
-| You edit…    | Use                                                                          | Form             |
-| ------------ | ---------------------------------------------------------------------------- | ---------------- |
-| **Markdown** | [`mdformat-no-cjk-latin-space`](packages/mdformat-no-cjk-latin-space)        | mdformat plugin  |
-| **Typst**    | [`typst-cjk-latin-space-remover`](packages/typst-cjk-latin-space-remover)    | standalone CLI   |
+| You edit…    | Use                                                                       | Form            | Status      |
+| ------------ | ------------------------------------------------------------------------- | --------------- | ----------- |
+| **Markdown** | [`mdformat-no-cjk-latin-space`](packages/mdformat-no-cjk-latin-space)     | mdformat plugin | usable      |
+| **Typst**    | [`typst-cjk-latin-space-remover`](packages/typst-cjk-latin-space-remover) | standalone CLI  | provisional |
 
-Each package's README has install and usage. The Markdown tool builds on
-mdformat + dollarmath, so fence/code/math protection is structural (the parser
-never exposes their interior). The Typst tool is a self-contained CLI with a
-regex/state-machine scanner for Typst's spans (`$`, `` ` ``, `#expr`, `@ref`,
-list markers).
+Each package's README has install and usage. Neither is on PyPI; both install
+from this repository.
+
+The Markdown tool builds on mdformat + dollarmath, so fence/code/math protection
+is structural (the parser never exposes their interior) for every construct an
+enabled extension parses — which is why it depends on mdformat-gfm rather than
+leaving GFM constructs to chance.
+
+The Typst tool is a self-contained CLI with a regex/state-machine scanner for
+Typst's spans (`$`, `` ` ``, `#expr`, `@ref`, list markers). It is
+**provisional** — that scanner has limits its README lists, and the package is
+not released while they stand.
 
 ## Migrating from `cjk-space-formatter`
 
 The single `cjk-space-formatter` CLI that handled both formats is **deprecated**
-in favour of the two tools above. Replace `cjk-space-formatter file.typ` with
-`typst-cjk-latin-space-remover file.typ`; for Markdown, install the plugin and
-run `mdformat`.
+in favour of the two tools above. For Markdown, install the plugin and run
+`mdformat`. For Typst, `typst-cjk-latin-space-remover file.typ` replaces
+`cjk-space-formatter file.typ`, subject to the provisional status above.
 
 ## Repository layout
 
 ```
 packages/
-  mdformat-no-cjk-latin-space/    # PyPI
-  typst-cjk-latin-space-remover/  # PyPI
+  mdformat-no-cjk-latin-space/    # published from here; not on PyPI yet
+  typst-cjk-latin-space-remover/  # provisional, unreleased
 core/                             # cjk-latin-space core: squash(plain_run) — build-time vendored, not published
 conformance/                      # pure-run core corpus, target-independent
 ```

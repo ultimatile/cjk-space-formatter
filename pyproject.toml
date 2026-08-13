@@ -1,11 +1,11 @@
 # uv workspace root (virtual — not itself a package).
 #
-# Layout rationale: the published surface is two packages, not two
+# Layout rationale: the intended published surface is two packages, not two
 # repos. They share a core, so a monorepo keeps a single source of truth and
-# atomic changes; independent PyPI release cycles are still possible per package.
+# atomic changes; independent release cycles stay possible per package.
 #
-#   packages/mdformat-no-cjk-latin-space/   # PyPI
-#   packages/typst-cjk-latin-space-remover/ # PyPI
+#   packages/mdformat-no-cjk-latin-space/   # usable; not on PyPI yet
+#   packages/typst-cjk-latin-space-remover/ # provisional, unreleased
 #   core/                                   # cjk-latin-space core (build-time vendored, not published)
 #   conformance/                            # pure-run core corpus (target-independent)
 

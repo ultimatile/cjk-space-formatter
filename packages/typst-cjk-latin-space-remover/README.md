@@ -23,8 +23,11 @@ Typst spans are protected:
 
 ## Install & use
 
+**Provisional and unreleased** — the Non-goals below are what gates a release.
+Install from this repository:
+
 ```sh
-pip install typst-cjk-latin-space-remover
+pip install "git+https://github.com/ultimatile/cjk-space-formatter#subdirectory=packages/typst-cjk-latin-space-remover"
 typst-cjk-latin-space-remover -i your.typ     # edit in place
 cat your.typ | typst-cjk-latin-space-remover  # stdin -> stdout
 ```
@@ -50,5 +53,5 @@ The hash-expression scanner protects an expression's head and its terminating
 space, not arbitrary code-mode bodies. A space *inside* a `#let` / `#show` value
 — a string or content block such as `#let x = "日本 語"` — is not protected and
 may be collapsed. Protecting it correctly would require a real Typst parser,
-which this tool deliberately avoids. Keep CJK-adjacent spaces out of code-mode
-string/content literals, or guard those lines.
+which this tool does not currently use. Keep CJK-adjacent spaces out of
+code-mode string/content literals, or guard those lines.
