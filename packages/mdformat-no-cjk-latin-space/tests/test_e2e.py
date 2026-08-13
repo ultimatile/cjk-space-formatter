@@ -6,11 +6,31 @@ typst-cjk-latin-space-remover's suite; keep the two in lockstep.
 """
 
 import mdformat
+import pytest
 from markdown_it import MarkdownIt
+from mdit_py_plugins.gfm_autolink import gfm_autolink_plugin
+from mdit_py_plugins.tasklists import tasklists_plugin
+
+# The set the package ships: `gfm` and `tables` come from the mdformat-gfm
+# dependency, and without them GFM constructs reach the plugin as paragraph text
+# and lose the spaces their syntax uses as delimiters.
+SHIPPED_EXTENSIONS = {"no_cjk_latin_space", "gfm", "tables"}
 
 
 def fmt(md: str) -> str:
-    return mdformat.text(md, extensions={"no_cjk_latin_space"})
+    return mdformat.text(md, extensions=SHIPPED_EXTENSIONS)
+
+
+def render_gfm(md: str) -> str:
+    """Render as GFM, to assert a construct still means what it looked like.
+
+    Asserting only on the formatted source would pass just as well if the plugin
+    stopped doing anything, so the GFM cases below check the rendering too.
+    Task lists and bare-URL autolinks need their plugins registered explicitly;
+    `linkify` stays off because linkify-it-py is not a dependency.
+    """
+    parser = MarkdownIt("gfm-like", {"linkify": False})
+    return parser.use(tasklists_plugin).use(gfm_autolink_plugin).render(md)
 
 
 def test_fold_across_code_inline():  # MIRROR: inline raw
@@ -82,3 +102,65 @@ def test_fold_across_link():
 
 def test_fold_across_image():
     assert fmt("日本語 ![alt](x) テスト\n") == "日本語![alt](x)テスト\n"
+
+
+def test_fold_across_strikethrough():
+    """Both boundary edges: `_TRAIL_CJK` before `~~` and `_LEAD_CJK` after it."""
+    assert fmt("日本語 ~~English~~ テスト\n") == "日本語~~English~~テスト\n"
+
+
+def test_folded_strikethrough_still_renders():
+    assert "<s>English</s>" in render_gfm(fmt("日本語 ~~English~~ テスト\n"))
+
+
+@pytest.mark.parametrize(
+    "src, expected",
+    [
+        ("> 日本語 English\n", "> 日本語English\n"),
+        ("> > 日本語 English\n", "> > 日本語English\n"),
+        (">日本語 English\n", "> 日本語English\n"),
+        ("> 日本語 English\n続き です\n", "> 日本語English\n> 続きです\n"),
+        ("> Plain English text\n", "> Plain English text\n"),
+    ],
+    ids=["single", "nested", "no-space-marker", "lazy-continuation", "latin-only"],
+)
+def test_blockquote_marker_padding_survives(src, expected):
+    """The padding after `>` is markup, not prose, so the squash must miss it.
+
+    markdown-it puts the marker in `blockquote_open`, leaving the inline token
+    with content alone, so the postprocessor never sees it.
+    """
+    assert fmt(src) == expected
+
+
+def test_task_list_checkbox_survives():
+    assert fmt("- [ ] 項目 A\n- [x] 完了 した\n") == "- [ ] 項目A\n- [x] 完了した\n"
+    assert 'type="checkbox"' in render_gfm(fmt("- [ ] 項目 A\n"))
+
+
+def test_autolink_literal_survives():
+    src = "詳細は https://example.com を参照\n"
+    assert fmt(src) == src
+    assert 'href="https://example.com"' in render_gfm(fmt(src))
+
+
+def test_table_padding_survives_and_cell_squashes():
+    formatted = fmt("| 列 | Name |\n| --- | --- |\n| 日本 語 | x |\n")
+    assert "| 日本語 |" in formatted
+    assert "<table>" in render_gfm(formatted)
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "日本語 English テスト\n",
+        "- [ ] 項目 A\n",
+        "| 列 |\n| --- |\n| 日本 語 |\n",
+        "日本語 ~~English~~ テスト\n",
+        "> 日本語 English\n",
+    ],
+    ids=["run", "task-list", "table", "strikethrough", "blockquote"],
+)
+def test_idempotent(src):
+    once = fmt(src)
+    assert fmt(once) == once

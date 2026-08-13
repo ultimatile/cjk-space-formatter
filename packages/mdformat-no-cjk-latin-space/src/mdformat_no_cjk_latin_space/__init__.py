@@ -6,6 +6,15 @@ escapes and run-length corner cases that plagued the old regex passes is "free"
 here because the parser hands us those as opaque inline tokens — we never see
 their interior, so we never touch it.
 
+That protection reaches exactly as far as the enabled extension set. A construct
+no enabled extension parses arrives as ordinary paragraph text, and a space that
+construct uses as a *delimiter* is then indistinguishable from prose spacing —
+GFM task lists, autolink literals and tables are the reachable cases, which is
+why `mdformat-gfm` is a hard dependency. It only makes `gfm` and `tables`
+available, though: a caller that narrows the extension set (the `extensions=`
+argument, `--extensions`, or `.mdformat.toml`) must name them alongside this
+plugin, or those constructs lose their protection again.
+
 The core `squash` handles spaces *within* a plain text run. A space straddling
 the boundary between a text run and an adjacent inline node lives on the text
 node's edge (the node is a separate sibling), so it is folded here using the
@@ -32,9 +41,11 @@ _LEAD_CJK = re.compile(f"^ +(?={_CJK})")
 # never reach the `text` postprocessor at all — the parser keeps their content
 # out of text nodes entirely.
 _PROTECTED = {"code_inline", "math_inline", "math_block"}
-# Transparent inline containers a boundary space also folds across: links and
-# images carry no intraword restriction, so dropping the space is always safe.
-_TRANSPARENT = {"link", "image"}
+# Transparent inline containers a boundary space also folds across: links,
+# images and strikethrough carry no intraword restriction, so dropping the space
+# is always safe. Strikethrough belongs here rather than with the conditional
+# emphasis below because GFM places no such restriction on `~~`.
+_TRANSPARENT = {"link", "image", "s"}
 # Emphasis is conditional. CommonMark forbids `_`/`__` from opening or closing
 # intraword, and CJK count as word characters, so folding a space around
 # underscore emphasis would turn the markers literal (日本語 _x_ -> 日本語_x_
