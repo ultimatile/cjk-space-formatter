@@ -264,3 +264,9 @@ class TestFormatText:
         text = "前 text\n```\nそのまま です\n```\n後 text\n"
         expected = "前text\n```\nそのまま です\n```\n後text\n"
         assert format_text(text) == expected
+
+    def test_self_contained_single_line_raw_does_not_open_a_block(self):
+        """A fence that closes on its own line must not swallow what follows."""
+        text = "```py print(1) ```\n次 の行\n"
+        expected = "```py print(1) ```\n次の行\n"
+        assert format_text(text) == expected

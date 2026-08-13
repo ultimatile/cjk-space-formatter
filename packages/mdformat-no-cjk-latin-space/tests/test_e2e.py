@@ -67,6 +67,12 @@ def test_block_math_boundary():
     assert fmt("式は\n\n$$\nx = 1\n$$\n\nです\n") == "式は\n\n$$\nx = 1\n$$\n\nです\n"
 
 
+def test_labelled_block_math_round_trips():
+    """dollarmath runs with labels on, so `$$ … $$ (eq)` is its own token type."""
+    src = "式は\n\n$$\nx = 1\n$$ (eq)\n\nです\n"
+    assert fmt(src) == src
+
+
 def test_pure_ascii_unchanged():
     assert fmt("Hello World\n") == "Hello World\n"
 

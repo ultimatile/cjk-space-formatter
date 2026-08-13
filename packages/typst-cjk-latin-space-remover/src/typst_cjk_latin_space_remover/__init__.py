@@ -1,10 +1,11 @@
 """Remove CJK<->Latin/digit spaces in Typst markup, protecting Typst spans.
 
-Typst-only front-end. Unlike the Markdown side (which delegates span detection to
-a CommonMark parser), Typst has no context-dependent corner cases comparable to
-CommonMark, so a sentinel-based regex scanner plus a line-level state machine
-covers its protected spans: inline/block math `$`, inline/block raw `` ` ``,
-`#expr`, `@ref`, and structural list/heading prefixes. The format-independent
+Typst-only front-end. Span detection is a sentinel-based regex scanner plus a
+line-level state machine, covering inline/block math `$`, inline/block raw
+`` ` ``, `#expr`, `@ref`, and structural list/heading prefixes. That is a
+heuristic, not a grammar: `$`-math is delimiter-balanced rather than
+line-structured, and markup mode is not distinguished from code mode, so the
+README's Non-goals list the shapes it does not reach. The format-independent
 CJK-Latin invariant is delegated to the shared core's `squash`.
 """
 
@@ -205,8 +206,12 @@ def format_line(line: str) -> str:
     processed = squash(processed)
 
     # Restore every sentinel kind. Each placeholder is `\x00<letter><i>\x00` with
-    # a distinct letter and `\x00` never occurs in restored content, so the kinds
-    # are independent and the restore order does not affect the result.
+    # a distinct letter, and the scheme assumes the input carries no literal
+    # `\x00` of its own. The order below is load-bearing, not incidental:
+    # extraction is chained over already-substituted text, so a block saved later
+    # can contain an earlier kind's placeholder (`#text($x$)` is saved as a hash
+    # block holding a math sentinel). Restoring outermost-first is what leaves
+    # every inner sentinel visible to a later pass.
     for i, block in enumerate(hash_blocks):
         processed = processed.replace(f"\x00H{i}\x00", block)
     for i, block in enumerate(marker_blocks):
@@ -225,8 +230,7 @@ def format_text(text: str) -> str:
     """Format complete text, skipping block math and block raw regions.
 
     A line-level state machine keeps multi-line protected regions (block math
-    `$ ... $`, block raw ``` ``` ... ``` ```) verbatim. Mirrors how the Markdown
-    front-end gets the same protection structurally from its parser.
+    `$ ... $`, block raw ``` ``` ... ``` ```) verbatim.
     """
     lines = text.splitlines(keepends=True)
     result: list[str] = []

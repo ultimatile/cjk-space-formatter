@@ -2,9 +2,11 @@
 
 Single source of the format-independent invariant shared by every front-end:
 within one *plain run* of text (no protected spans — no math, code, refs), a run
-of spaces with a CJK character on at least one side is removed (so CJK<->Latin,
-CJK<->digit and CJK<->CJK all collapse), with one exception — a space
-immediately following the half-width colon is kept as correct prose typography.
+of spaces *between* two non-space characters is removed when either side is CJK
+(so CJK<->Latin, CJK<->digit and CJK<->CJK all collapse), with one exception — a
+space immediately following the half-width colon is kept as correct prose
+typography. Leading and trailing whitespace has nothing on its far side and so
+is left alone; front-ends own their own edges.
 
 Boundaries with protected spans (math/code/refs) are deliberately NOT handled
 here — that plumbing lives in each front-end, which knows its own parser's span

@@ -1,10 +1,9 @@
 """mdformat plugin removing CJK<->Latin/digit spaces, math- and code-safe.
 
 The plugin supplies only the CJK-Latin logic; mdformat + mdit-py-plugins supply
-CommonMark correctness and math node-isation. Protection of fences, code spans,
-escapes and run-length corner cases that plagued the old regex passes is "free"
-here because the parser hands us those as opaque inline tokens — we never see
-their interior, so we never touch it.
+CommonMark correctness and math node-isation. Protection of fences, code spans
+and escapes is "free" here because the parser hands us those as opaque inline
+tokens — we never see their interior, so we never touch it.
 
 That protection reaches exactly as far as the enabled extension set. A construct
 no enabled extension parses arrives as ordinary paragraph text, and a space that
@@ -79,6 +78,13 @@ def _render_math_block(node, context):
     return f"$$\n{node.content.strip(chr(10))}\n$$"
 
 
+def _render_math_block_label(node, context):
+    # dollarmath runs with labels enabled, so `$$ … $$ (eq)` arrives as its own
+    # token type carrying the label in `info`. Without a renderer for it
+    # mdformat raises KeyError on any labelled display equation.
+    return f"$$\n{node.content.strip(chr(10))}\n$$ ({node.info})"
+
+
 def _text_postprocess(text, node, context):
     """Squash within the run, then fold spaces straddling a foldable boundary."""
     out = squash(text)
@@ -96,10 +102,11 @@ def _text_postprocess(text, node, context):
 RENDERERS = {
     "math_inline": _render_math_inline,
     "math_block": _render_math_block,
+    "math_block_label": _render_math_block_label,
 }
 POSTPROCESSORS = {"text": _text_postprocess}
 
-# Required: this plugin deliberately changes rendered HTML (removing spaces),
-# so mdformat's is_md_equal safety check would otherwise silently discard every
-# change and the plugin would be a no-op. Declaring intent opts out of that check.
+# Required: this plugin deliberately changes rendered HTML (removing spaces), so
+# mdformat's CLI would otherwise fail the is_md_equal check on every file it
+# touches. Declaring intent opts out of that check.
 CHANGES_AST = True

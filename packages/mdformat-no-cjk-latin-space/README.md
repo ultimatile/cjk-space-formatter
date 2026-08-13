@@ -19,11 +19,8 @@ cannot protect `$...$`. Building *on* mdformat instead, the framework
 (mdformat + [dollarmath](https://github.com/executablebooks/mdit-py-plugins))
 supplies CommonMark correctness and math node-isation; this plugin supplies only
 the CJK-Latin logic. Protection of fences, code spans and escapes is structural
-and therefore free — as far as the enabled extensions reach. A construct nothing
-parses arrives as paragraph text, and any space its syntax uses as a *delimiter*
-then looks like prose spacing; that is why
-[mdformat-gfm](https://github.com/hukkin/mdformat-gfm) is a hard dependency
-rather than a suggestion.
+and therefore free — but only as far as the enabled extensions reach, which is
+why [mdformat-gfm](https://github.com/hukkin/mdformat-gfm) is a hard dependency.
 
 ## Install & use
 
