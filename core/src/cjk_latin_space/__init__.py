@@ -50,4 +50,4 @@ def squash(plain_run: str) -> str:
     return plain_run
 
 
-__all__ = ["squash", "CJK_CLASS"]
+__all__ = ["CJK_CLASS", "squash"]

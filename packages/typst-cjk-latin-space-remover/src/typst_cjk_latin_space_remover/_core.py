@@ -20,4 +20,4 @@ try:
 except ImportError:  # published wheel: build-time vendored copy
     from ._cjk_latin_space import CJK_CLASS, squash
 
-__all__ = ["squash", "CJK_CLASS"]
+__all__ = ["CJK_CLASS", "squash"]

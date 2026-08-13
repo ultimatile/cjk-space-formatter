@@ -8,7 +8,6 @@ each package's own e2e suite, not here.
 """
 
 import pytest
-
 from cjk_latin_space import squash
 
 CASES = [

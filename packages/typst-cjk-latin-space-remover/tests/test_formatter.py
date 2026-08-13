@@ -7,7 +7,6 @@ case in mdformat-no-cjk-latin-space's suite; keep the pair in lockstep.
 """
 
 import pytest
-
 from typst_cjk_latin_space_remover import format_line, format_text
 
 
