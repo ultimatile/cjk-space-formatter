@@ -43,11 +43,11 @@ mdformat.text(src, extensions={"no_cjk_latin_space", "gfm", "tables"})
 
 ## Behaviour & non-goals
 
-- Safe: fences, code spans, escapes, math, GFM tables, task lists and autolinks.
-  Not safe: any other dialect's syntax. The ones that bite use a space as a
-  separator, since that space is what gets removed — check your documents for
-  container directives (`:::note タイトル`), front matter values, and Hugo or
-  Liquid tags.
+- This plugin protects fences, code spans, escapes, math, GFM tables, task lists
+  and autolinks. It does not protect other Markdown dialects: where their syntax
+  depends on a space next to CJK, it removes that space and the construct
+  breaks. Check your documents for container directives (`:::note タイトル`),
+  front matter values, and Hugo or Liquid tags.
 - The half-width colon is preserved (`注: これは` stays), as correct prose typography.
 - Spaces are folded across emphasis (`**…**` / `*…*`), links, images and
   strikethrough (`~~…~~`), but **not** across underscore emphasis (`_…_` /
