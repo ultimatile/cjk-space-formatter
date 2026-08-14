@@ -218,6 +218,16 @@ class TestFormatText:
         expected = "$ x $ trailing\n後text\n"
         assert format_text(text) == expected
 
+    def test_single_line_block_math_formats_the_rest_of_its_own_line(self):
+        """A line whose math closes on it is ordinary markup, not a block.
+
+        Skipping it wholesale leaves the CJK spacing outside the math on that
+        line unformatted, which `format_line` on the same string does remove.
+        """
+        text = "$ x = 1 $ という 式\n"
+        expected = "$ x = 1 $という式\n"
+        assert format_text(text) == expected
+
     def test_block_math_with_colon_label_resumes(self):
         """A colon in the close label must still be recognised as the closer.
 

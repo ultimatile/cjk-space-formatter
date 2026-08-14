@@ -280,9 +280,14 @@ def format_text(text: str) -> str:
             in_block_math = True
             continue
         if stripped.startswith("$ "):
-            result.append(line)
             if "$" not in stripped[2:]:
+                result.append(line)
                 in_block_math = True
+            else:
+                # The math closes on this line, so the line is ordinary markup
+                # that happens to start with math; `format_line` protects the
+                # span and formats what surrounds it.
+                result.append(format_line(line))
             continue
 
         result.append(format_line(line))
