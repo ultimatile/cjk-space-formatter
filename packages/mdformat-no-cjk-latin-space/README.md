@@ -43,13 +43,11 @@ mdformat.text(src, extensions={"no_cjk_latin_space", "gfm", "tables"})
 
 ## Behaviour & non-goals
 
-- What the parser recognises is what stays safe: fences, code spans, escapes,
-  math, and — through the required
-  [mdformat-gfm](https://github.com/hukkin/mdformat-gfm) — GFM tables, task
-  lists and autolinks. Syntax from a dialect nothing here parses is **not**
-  safe, and the ones that bite use a space as a separator, because that space is
-  what gets removed. Check your documents for container directives
-  (`:::note タイトル`), front matter values, and Hugo or Liquid tags.
+- Safe: fences, code spans, escapes, math, GFM tables, task lists and autolinks.
+  Not safe: any other dialect's syntax. The ones that bite use a space as a
+  separator, since that space is what gets removed — check your documents for
+  container directives (`:::note タイトル`), front matter values, and Hugo or
+  Liquid tags.
 - The half-width colon is preserved (`注: これは` stays), as correct prose typography.
 - Spaces are folded across emphasis (`**…**` / `*…*`), links, images and
   strikethrough (`~~…~~`), but **not** across underscore emphasis (`_…_` /
