@@ -18,9 +18,16 @@ edits. A plain Markdown AST has no math concept, so off-the-shelf textlint rules
 cannot protect `$...$`. Building *on* mdformat instead, the framework
 (mdformat + [dollarmath](https://github.com/executablebooks/mdit-py-plugins))
 supplies CommonMark correctness and math node-isation; this plugin supplies only
-the CJK-Latin logic. Protection of fences, code spans and escapes is structural
-and therefore free — but only as far as the enabled extensions reach, which is
-why [mdformat-gfm](https://github.com/hukkin/mdformat-gfm) is a hard dependency.
+the CJK-Latin logic.
+
+What the parser recognises is therefore what stays safe: fences, code spans,
+escapes, math, and — through the required
+[mdformat-gfm](https://github.com/hukkin/mdformat-gfm) — GFM tables, task lists
+and autolinks. Syntax from dialects it does not parse is *not* safe, and the
+ones that bite are those whose syntax uses a space as a separator, because that
+space is what gets removed. Container directives (`:::note タイトル`), front
+matter values, and template tags such as Hugo or Liquid are the cases to check
+for before pointing this at a document.
 
 ## Install & use
 
