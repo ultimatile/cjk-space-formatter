@@ -11,23 +11,15 @@ pangu-style tools add spaces, this removes them.
 これは `code` です       ->  これは`code`です
 ```
 
-## Why a plugin (not regex / textlint)
+## Why a plugin (not a rule or a regex)
 
-Math (`$...$`, `$$...$$`), inline code and fenced code must be protected from
-edits. A plain Markdown AST has no math concept, so off-the-shelf textlint rules
-cannot protect `$...$`. Building *on* mdformat instead, the framework
-(mdformat + [dollarmath](https://github.com/executablebooks/mdit-py-plugins))
-supplies CommonMark correctness and math node-isation; this plugin supplies only
-the CJK-Latin logic.
-
-What the parser recognises is therefore what stays safe: fences, code spans,
-escapes, math, and — through the required
-[mdformat-gfm](https://github.com/hukkin/mdformat-gfm) — GFM tables, task lists
-and autolinks. Syntax from dialects it does not parse is *not* safe, and the
-ones that bite are those whose syntax uses a space as a separator, because that
-space is what gets removed. Container directives (`:::note タイトル`), front
-matter values, and template tags such as Hugo or Liquid are the cases to check
-for before pointing this at a document.
+Deleting the spaces is trivial. Not deleting the ones inside `$...$` is the
+whole problem, and nothing that works on text can tell them apart. textlint is
+the natural home for a rule like this, but its Markdown plugins do not expose
+math as a node, so `allows` has nothing to exempt and the spaces inside your
+equations go with the rest. mdformat with
+[dollarmath](https://github.com/executablebooks/mdit-py-plugins) does expose it,
+so that is where this lives.
 
 ## Install & use
 
@@ -51,6 +43,13 @@ mdformat.text(src, extensions={"no_cjk_latin_space", "gfm", "tables"})
 
 ## Behaviour & non-goals
 
+- What the parser recognises is what stays safe: fences, code spans, escapes,
+  math, and — through the required
+  [mdformat-gfm](https://github.com/hukkin/mdformat-gfm) — GFM tables, task
+  lists and autolinks. Syntax from a dialect nothing here parses is **not**
+  safe, and the ones that bite use a space as a separator, because that space is
+  what gets removed. Check your documents for container directives
+  (`:::note タイトル`), front matter values, and Hugo or Liquid tags.
 - The half-width colon is preserved (`注: これは` stays), as correct prose typography.
 - Spaces are folded across emphasis (`**…**` / `*…*`), links, images and
   strikethrough (`~~…~~`), but **not** across underscore emphasis (`_…_` /
