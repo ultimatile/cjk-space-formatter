@@ -1,22 +1,19 @@
-"""Resolve the cjk-latin-space core under one import path for dev and wheel.
+"""Resolve the cjk-latin-space core for the development workspace.
 
-The dev workspace installs `cjk_latin_space` editable, so it is preferred there
-and always reflects live core edits. In a published wheel that package is absent
-(core is never published to an index), so the import falls back to the build-time
-vendored `_cjk_latin_space` beside this file. Each published package vendors
-under its own private name, so two installed packages never collide.
+The workspace installs `cjk_latin_space` as an editable member, so this import
+always reflects live edits to `core/`. A published wheel never contains this
+file: the wheel target excludes it, and `hatch_build.py` force-includes a shim
+that reaches the build-time vendored copy through a relative import instead.
 
-Dev-first ordering is deliberate. The editable install's build hook also writes
-`_cjk_latin_space.py` into the working tree, so a vendored-first order would let
-that copy shadow live core edits during development (the bug this avoids). The
-cost is that a wheel prefers any importable top-level `cjk_latin_space` over its
-own vendored copy. This project publishes none, but nothing stops an unrelated
-package from providing that name, and such an install would silently take over.
+The two contexts need opposite things, which is why the file differs between
+them. Development must not read the vendored copy, because uv refreshes that
+copy only on a forced reinstall and it therefore goes stale across ordinary
+edits to `core/`. A wheel must not read the top-level module, because any
+installed distribution can provide that name. A relative import resolves only
+within the package's own `__path__` and never consults `sys.path`, so the
+wheel's shim cannot be shadowed.
 """
 
-try:
-    from cjk_latin_space import CJK_CLASS, squash  # dev workspace: live core
-except ImportError:  # published wheel: build-time vendored copy
-    from ._cjk_latin_space import CJK_CLASS, squash
+from cjk_latin_space import CJK_CLASS, squash
 
 __all__ = ["CJK_CLASS", "squash"]
