@@ -9,10 +9,9 @@ under its own private name, so two installed packages never collide.
 Dev-first ordering is deliberate. The editable install's build hook also writes
 `_cjk_latin_space.py` into the working tree, so a vendored-first order would let
 that copy shadow live core edits during development (the bug this avoids). The
-only cost is that a published wheel would prefer an externally-installed
-top-level `cjk_latin_space` over its vendored copy — but since core is never
-published, no such package can exist on a user's system, so the wheel stays
-self-contained in practice.
+cost is that a wheel prefers any importable top-level `cjk_latin_space` over its
+own vendored copy. This project publishes none, but nothing stops an unrelated
+package from providing that name, and such an install would silently take over.
 """
 
 try:
