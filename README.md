@@ -1,130 +1,96 @@
-# cjk-space-formatter
+# cjk-latin-space
 
-A formatter that removes unnecessary spaces between CJK characters and math expressions / English words. LLMs (Claude, ChatGPT, etc.) tend to insert these spaces when generating Japanese text, carrying over English spacing conventions.
-
-Primarily targets Typst files, but also works with Markdown and other formats using `$...$` inline math.
-
-## Before / After
+Tools that **remove** unwanted spaces between CJK characters and adjacent
+Latin letters, digits, or math — the spaces LLMs tend to insert when they carry
+English spacing conventions into Japanese text. This is the inverse of CSS
+`text-autospace: ideograph-alpha` and of pangu-style tools, which *add* such
+spacing.
 
 ```
-# Before (LLM-generated text)
-任意の2量子ビットユニタリゲート $U in S U(4)$ を以下のように分解する：
-正準パラメータは Weyl chamber $pi / 4 >= c_x$ に制限できる。
-
-# After
-任意の2量子ビットユニタリゲート$U in S U(4)$を以下のように分解する：
-正準パラメータはWeyl chamber $pi / 4 >= c_x$に制限できる。
+任意の2量子ビットユニタリゲート $U in S U(4)$ を分解する
+->  任意の2量子ビットユニタリゲート$U in S U(4)$を分解する
 ```
 
-## Installation
+## Scope: CJK-ambient text
 
-```bash
-uv tool install git+https://github.com/ultimatile/cjk-space-formatter
+These tools assume the surrounding text is **CJK-ambient** — Japanese (or other
+CJK) prose with the occasional Latin word, math, or code. Under that assumption
+every space adjacent to a CJK character is unwanted and removed. If your document
+is *Latin-ambient* — English prose with the occasional CJK word — you do not want
+this tool: there the spaces are correct Latin word separation. The tools do not
+detect ambient language; feeding them Latin-ambient text will strip spaces that
+should stay.
+
+## Which tool do you want?
+
+The spaces are easy; the hard part is **not touching** math, code, and other
+spans where a space is meaningful. Markdown and Typst protect different spans in
+different ways, so this repo ships **two** tools rather than one tool that half-
+serves both:
+
+| You edit…    | Use                                                                       | Form            | Status      |
+| ------------ | ------------------------------------------------------------------------- | --------------- | ----------- |
+| **Markdown** | [`mdformat-no-cjk-latin-space`](packages/mdformat-no-cjk-latin-space)     | mdformat plugin | usable      |
+| **Typst**    | [`typst-cjk-latin-space-remover`](packages/typst-cjk-latin-space-remover) | standalone CLI  | provisional |
+
+Each package's README has install and usage. Neither is on PyPI; both install
+from this repository.
+
+The Markdown tool builds on mdformat + dollarmath, so fence/code/math protection
+is structural (the parser never exposes their interior) for every construct an
+enabled extension parses — which is why it depends on mdformat-gfm rather than
+leaving GFM constructs to chance.
+
+The Typst tool is a self-contained CLI with a regex/state-machine scanner for
+Typst's spans (`$`, `` ` ``, `#expr`, `@ref`, list markers). It is
+**provisional** — that scanner has limits its README lists, and the package is
+not released while they stand.
+
+## Migrating from `cjk-space-formatter`
+
+The single `cjk-space-formatter` CLI that handled both formats is **deprecated**
+in favour of the two tools above. For Markdown, install the plugin and run
+`mdformat`. For Typst, `typst-cjk-latin-space-remover file.typ` replaces
+`cjk-space-formatter file.typ`, subject to the provisional status above.
+
+## Repository layout
+
+```
+packages/
+  mdformat-no-cjk-latin-space/    # published from here; not on PyPI yet
+  typst-cjk-latin-space-remover/  # provisional, unreleased
+core/                             # cjk-latin-space core: squash(plain_run) — build-time vendored, not published
+conformance/                      # pure-run core corpus, target-independent
 ```
 
-For development:
-
-```bash
-git clone https://github.com/ultimatile/cjk-space-formatter
-cd cjk-space-formatter
-uv sync --dev
-```
-
-## Usage
-
-```bash
-# Print formatted output to stdout
-cjk-space-formatter file.typ
-
-# Modify files in place
-cjk-space-formatter -i file.typ
-
-# Show unified diff of changes
-cjk-space-formatter --diff file.typ
-
-# Check only (exit 1 if changes needed, useful for CI)
-cjk-space-formatter --check file.typ
-
-# Multiple files
-cjk-space-formatter -i *.typ
-
-# Read from stdin
-cat file.typ | cjk-space-formatter
-```
-
-## Rules
-
-### Spaces removed
-
-| Pattern                        | Before       | After       |
-| ------------------------------ | ------------ | ----------- |
-| CJK + space + `$` (math start) | `行列 $A$`   | `行列$A$`   |
-| `$` (math end) + space + CJK   | `$A$ の`     | `$A$の`     |
-| CJK + space + English word     | `は Weyl`    | `はWeyl`    |
-| English word + space + CJK     | `chamber の` | `chamberの` |
-| CJK + space + digit            | `最大 3 個`  | `最大3個`   |
-
-### Spaces preserved
-
-| Pattern                        | Example             | Reason                                                  |
-| ------------------------------ | ------------------- | ------------------------------------------------------- |
-| Between English words          | `Weyl chamber`      | English spacing                                         |
-| Inside math `$...$`            | `$A times.o B$`     | Math content                                            |
-| Block math lines               | `$ U = A B $`       | Multi-line equations                                    |
-| Typst structural syntax        | `=`, `==`, `-`, `+` | Headings, list markers                                  |
-| Ordered-list marker before CJK | `## 1. 項目`        | Numbered marker at line start / under heading or bullet |
-| After half-width colon         | `注: これは`        | Colon-space convention                                  |
-| After `#` before CJK           | `# 見出し`          | Markdown headings / Typst commands                      |
-| After Typst `#expr`            | `#sym.ballot 基底`  | Space terminates expression                             |
-| After Typst `@label`           | `@eq:cost の計算`   | Space terminates label reference                        |
-
-## Known limitations
-
-### Underscore emphasis adjacent to CJK breaks
-
-The formatter removes the spaces around any Markdown emphasis it does not recognise as a protected pattern. For asterisk emphasis this is safe — CommonMark allows `*`/`**` to open and close intraword, so `山田 **太郎** は` → `山田**太郎**は` still renders `太郎` bold. Underscore emphasis is different: CommonMark forbids `_`/`__` from opening or closing inside a "word", and CJK characters count as word characters. Removing the spaces therefore strips the emphasis:
-
-| Input (after formatting) | Rendered                         |
-| ------------------------ | -------------------------------- |
-| `山田**太郎**は`         | `山田<strong>太郎</strong>は` ✓  |
-| `山田*太郎*は`           | `山田<em>太郎</em>は` ✓          |
-| `山田_太郎_は`           | `山田_太郎_は` (literal `_`) ✗   |
-| `山田__太郎__は`         | `山田__太郎__は` (literal `_`) ✗ |
-
-The formatter does not parse emphasis markers, so it cannot tell underscore emphasis apart from a stray underscore. If your source uses `_`/`__` for emphasis around CJK, switch to `*`/`**`, or keep the surrounding spaces and exclude those lines.
+The shared core holds only the format-independent invariant — collapsing
+CJK<->Latin/digit spaces within a plain run (with the half-width colon as the
+sole exception). Span/boundary protection is each tool's own plumbing. The core
+is vendored into each wheel at build time, so it is never a runtime dependency
+and the two packages release independently.
 
 ## Alternatives
 
-Several tools touch CJK / half-width spacing; they differ by **direction** (add vs remove) and **target**:
+Several tools touch CJK / half-width spacing; they differ by **direction** (add
+vs remove) and **target**:
 
 | Tool                                                                                                                          | Direction                                  | Target                             |
 | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------- |
 | [pangu](https://github.com/vinta/pangu.js)                                                                                    | adds spaces                                | HTML / plain text (not for markup) |
 | [Prettier](https://github.com/prettier/prettier/issues/6385)                                                                  | adds in Markdown by default (configurable) | code / Markdown                    |
 | [textlint](https://github.com/textlint/textlint) + [textlint-plugin-typst](https://github.com/textlint/textlint-plugin-typst) | removes (`--fix`able)                      | Markdown / Typst / text            |
-| **cjk-space-formatter**                                                                                                       | removes                                    | Typst / Markdown source            |
+| **this repo**                                                                                                                 | removes                                    | Markdown / Typst source            |
 
-The closest overlap is textlint with its Typst plugin. This tool instead keeps its exception set — math `$...$`, Typst `@label` / `#…`, list markers — under the formatter's own control and ships as a zero-dependency Python CLI, rather than depending on a plugin's AST coverage.
-
-## Library API
-
-```python
-from cjk_space_formatter import format_text, format_line, format_file
-from pathlib import Path
-
-# Format a string
-result = format_text("テスト $x$ です")
-# -> "テスト$x$です"
-
-# Format a file in place
-format_file(Path("file.typ"), in_place=True)
-
-# Check only (returns True if changes needed)
-changed = format_file(Path("file.typ"), check=True)
-```
+Off-the-shelf textlint rules cannot protect `$...$`: a plain Markdown AST has no
+math concept. These tools solve that by owning the math/span model — the Markdown
+plugin via dollarmath, the Typst CLI via its own scanner.
 
 ## Development
 
 ```bash
-uv run pytest tests/ -v
+uv sync                       # installs both packages + core (editable) and pytest
+uv run pytest conformance packages
 ```
+
+The core is resolved from the editable workspace install during development, so
+edits to `core/` take effect immediately without rebuilding the vendored copy.

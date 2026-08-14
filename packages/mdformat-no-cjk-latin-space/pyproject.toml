@@ -1,0 +1,34 @@
+[project]
+name = "mdformat-no-cjk-latin-space"
+version = "0.1.0"
+description = "mdformat plugin: remove spaces between CJK and Latin/digits, math- and code-safe"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["mdformat>=0.7", "mdit-py-plugins>=0.4", "mdformat-gfm>=1.0"]
+
+[project.entry-points."mdformat.parser_extension"]
+no_cjk_latin_space = "mdformat_no_cjk_latin_space"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mdformat_no_cjk_latin_space"]
+
+# Build-time vendor of the shared core. hatch_build.py copies
+# the core into src/ under a private name for both sdist and wheel; `artifacts`
+# overrides .gitignore so the generated file ships in both. The published wheel
+# then carries no inter-package dependency and core never becomes a runtime dep.
+[tool.hatch.build]
+artifacts = ["src/mdformat_no_cjk_latin_space/_cjk_latin_space.py"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+
+[dependency-groups]
+dev = ["cjk-latin-space"]
+
+[tool.uv.sources]
+cjk-latin-space = { workspace = true }

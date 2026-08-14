@@ -1,41 +1,44 @@
-"""CJK space formatter — remove unnecessary spaces between CJK and non-CJK characters."""
+"""Remove CJK<->Latin/digit spaces in Typst markup, protecting Typst spans.
+
+Typst-only front-end. Span detection is a sentinel-based regex scanner plus a
+line-level state machine, covering inline/block math `$`, inline/block raw
+`` ` ``, `#expr`, `@ref`, and structural list/heading prefixes. That is a
+heuristic, not a grammar: `$`-math is delimiter-balanced rather than
+line-structured, and markup mode is not distinguished from code mode, so the
+README's Non-goals list the shapes it does not reach. The format-independent
+CJK-Latin invariant is delegated to the shared core's `squash`.
+"""
 
 import re
 from pathlib import Path
 
-# Unicode ranges covering Japanese (Han, Hiragana, Katakana) and CJK punctuation
-_CJK_RANGES = (
-    r"\u3000-\u303f"  # CJK symbols and punctuation (、。「」 etc.)
-    r"\u3040-\u309f"  # Hiragana
-    r"\u30a0-\u30ff"  # Katakana
-    r"\u4e00-\u9fff"  # CJK Unified Ideographs
-    r"\uf900-\ufaff"  # CJK Compatibility Ideographs
-    r"\uff01-\uff60"  # Fullwidth ASCII variants
-    r"\uff65-\uff9f"  # Halfwidth Katakana
-)
-_CJK = f"[{_CJK_RANGES}]"
+from ._core import CJK_CLASS, squash
 
-# CJK char followed by space(s) then non-space
-_PAT_CJK_SPACE = re.compile(f"({_CJK}) +(?=\\S)")
-# Non-space (except half-width colon and #) followed by space(s) then CJK char
-_PAT_SPACE_CJK = re.compile(f"([^\\s:#]) +(?={_CJK})")
+_CJK = f"[{CJK_CLASS}]"
+
 # Inline math: $...$
 _PAT_INLINE_MATH = re.compile(r"\$[^$]*\$")
-# Block math closer: just $ with optional Typst label
-_PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w-]+>)?\s*$")
-# Typst structural prefixes whose trailing space must be preserved
+# Inline raw: `...` (single backtick, no embedded backtick). Multi-backtick
+# inline raw is a documented non-goal. A block fence (>=3 backticks on its own
+# line) is intercepted by the line state machine before reaching here.
+_PAT_INLINE_RAW = re.compile(r"`[^`\n]+`")
+# Block math closer: just $ with optional Typst label. Label characters mirror
+# the `@ref` class (`[\w:.-]`): Typst labels routinely carry colons / dots, e.g.
+# `<eq:fidelity>`, so a narrower class would fail to detect the close line and
+# leave the rest of the file stuck inside the block-math state.
+_PAT_BLOCK_MATH_CLOSE = re.compile(r"^\$\s*(<[\w:.-]+>)?\s*$")
+# Block raw fence: a line whose first non-space content is a run of >=3 backticks.
+_PAT_RAW_FENCE = re.compile(r"^\s*(`{3,})")
+# Typst structural prefixes whose trailing space must be preserved (headings,
+# bullets, ordered markers). Markdown `#` headings are out of scope here.
 _PAT_TYPST_PREFIX = re.compile(r"^(\s*(?:=+ |[-+] |\d+\. ))")
 # Typst label references: @label followed by space(s) — space terminates the label
 _PAT_TYPST_REF = re.compile(r"@[\w:.-]+ +")
 # Ordered-list markers ("1. ") preceding CJK, whose trailing space must be
-# preserved. A marker is only recognised at a structural position: the start of
-# the line, optionally behind heading / list prefixes ("## 1. あ", "- 1. あ").
-# Anchoring to structure (rather than any token boundary) keeps prose numbers
-# such as "Fig. 1. 図", version strings ("v2. ") and issue references ("#1. ")
-# as ordinary text, matching how AST-based formatters treat list markers as
-# syntax distinct from inline text.
-_PAT_ORDERED_MARKER = re.compile(rf"^\s*(?:(?:#+|=+|[-+]) )*\d+\. +(?={_CJK})")
-
+# preserved. Recognised only at a structural position: line start, optionally
+# behind Typst heading / bullet prefixes ("== 1. あ", "- 1. あ"). Anchoring to
+# structure keeps prose numbers ("Fig. 1. 図"), versions ("v2. ") as plain text.
+_PAT_ORDERED_MARKER = re.compile(rf"^\s*(?:(?:=+|[-+]) )*\d+\. +(?={_CJK})")
 
 # Typst keywords that take a following expression (e.g. #set heading(...))
 _TYPST_KEYWORDS = frozenset({"set", "show", "let", "import", "include"})
@@ -88,10 +91,9 @@ def _scan_balanced_parens(text: str, i: int, n: int) -> int:
 def _extract_typst_hash(text: str) -> tuple[str, list[str]]:
     """Extract Typst hash expressions with trailing spaces into placeholders.
 
-    Typst hash expressions start with ``#`` followed by a letter or underscore
-    (distinguishing them from Markdown ``#123`` issue references).  The scanner
-    walks through dot-separated identifiers and balanced parentheses (handling
-    nested parens and quoted strings) so that inputs like
+    Typst hash expressions start with ``#`` followed by a letter or underscore.
+    The scanner walks dot-separated identifiers and balanced parentheses
+    (handling nested parens and quoted strings) so that inputs like
     ``#set heading(numbering: "1.") 見出し`` are fully captured.
 
     For Typst keywords (``set``, ``show``, etc.), the scanner continues past
@@ -142,15 +144,8 @@ def _extract_typst_hash(text: str) -> tuple[str, list[str]]:
     return "".join(result), blocks
 
 
-def _remove_cjk_spaces(text: str) -> str:
-    """Remove spaces where one side is CJK and the other is non-whitespace."""
-    text = _PAT_CJK_SPACE.sub(r"\1", text)
-    text = _PAT_SPACE_CJK.sub(r"\1", text)
-    return text
-
-
 def format_line(line: str) -> str:
-    """Format a single line, removing CJK-adjacent spaces outside math blocks."""
+    """Format a single line, removing CJK-adjacent spaces outside protected spans."""
     trailing = ""
     if line.endswith("\n"):
         trailing = "\n"
@@ -166,6 +161,16 @@ def format_line(line: str) -> str:
         prefix = prefix_match.group(1)
         line = line[len(prefix) :]
 
+    # Extract inline raw spans first so a `$` inside backticks is not mistaken
+    # for math, and the run inside `code` is protected from squashing.
+    raw_blocks: list[str] = []
+
+    def _save_raw(m: re.Match) -> str:
+        raw_blocks.append(m.group(0))
+        return f"\x00C{len(raw_blocks) - 1}\x00"
+
+    processed = _PAT_INLINE_RAW.sub(_save_raw, line)
+
     # Extract inline math blocks into placeholders to protect their content
     math_blocks: list[str] = []
 
@@ -173,7 +178,7 @@ def format_line(line: str) -> str:
         math_blocks.append(m.group(0))
         return f"\x00M{len(math_blocks) - 1}\x00"
 
-    processed = _PAT_INLINE_MATH.sub(_save_math, line)
+    processed = _PAT_INLINE_MATH.sub(_save_math, processed)
 
     # Extract Typst @references (with trailing space) to protect the space
     # that terminates the label from being removed
@@ -198,9 +203,15 @@ def format_line(line: str) -> str:
 
     processed = _PAT_ORDERED_MARKER.sub(_save_marker, processed)
 
-    processed = _remove_cjk_spaces(processed)
+    processed = squash(processed)
 
-    # Restore hash expressions, markers, @references, then math blocks
+    # Restore every sentinel kind. Each placeholder is `\x00<letter><i>\x00` with
+    # a distinct letter, and the scheme assumes the input carries no literal
+    # `\x00` of its own. The order below is load-bearing, not incidental:
+    # extraction is chained over already-substituted text, so a block saved later
+    # can contain an earlier kind's placeholder (`#text($x$)` is saved as a hash
+    # block holding a math sentinel). Restoring outermost-first is what leaves
+    # every inner sentinel visible to a later pass.
     for i, block in enumerate(hash_blocks):
         processed = processed.replace(f"\x00H{i}\x00", block)
     for i, block in enumerate(marker_blocks):
@@ -209,18 +220,35 @@ def format_line(line: str) -> str:
         processed = processed.replace(f"\x00R{i}\x00", block)
     for i, block in enumerate(math_blocks):
         processed = processed.replace(f"\x00M{i}\x00", block)
+    for i, block in enumerate(raw_blocks):
+        processed = processed.replace(f"\x00C{i}\x00", block)
 
     return prefix + processed + trailing
 
 
 def format_text(text: str) -> str:
-    """Format a complete text, handling block math detection across lines."""
+    """Format complete text, skipping block math and block raw regions.
+
+    A line-level state machine keeps multi-line protected regions (block math
+    `$ ... $`, block raw ``` ``` ... ``` ```) verbatim.
+    """
     lines = text.splitlines(keepends=True)
     result: list[str] = []
     in_block_math = False
+    in_block_raw = False
+    raw_fence_len = 0
 
     for line in lines:
         stripped = line.strip()
+
+        if in_block_raw:
+            result.append(line)
+            # Close on a line whose leading backtick run is at least as long as
+            # the opening fence (Typst closes a raw block with matching backticks).
+            m = _PAT_RAW_FENCE.match(line)
+            if m and len(m.group(1)) >= raw_fence_len:
+                in_block_raw = False
+            continue
 
         if in_block_math:
             result.append(line)
@@ -228,13 +256,38 @@ def format_text(text: str) -> str:
                 in_block_math = False
             continue
 
-        # Block math: line starts with "$ " (single-line) or is just "$" (multi-line opener)
+        # Block raw opener: a line starting with >=3 backticks. A self-contained
+        # single-line raw (open and close on one line) stays verbatim without
+        # toggling state.
+        fence = _PAT_RAW_FENCE.match(line)
+        if fence:
+            result.append(line)
+            fence_len = len(fence.group(1))
+            rest = line[fence.end() :]
+            if not re.search(rf"`{{{fence_len},}}", rest):
+                in_block_raw = True
+                raw_fence_len = fence_len
+            continue
+
+        # Block math: a bare "$" opens a multi-line block. A "$ ..." line opens a
+        # multi-line block only if the math does NOT close on the same line — a
+        # second "$" after the opener closes it here ("$ x $", even with trailing
+        # text), so such a line is self-contained and must not enter the state
+        # (which would otherwise swallow the rest of the file). Detecting the
+        # close on a *later* content line is a documented non-goal.
         if stripped == "$":
             result.append(line)
             in_block_math = True
             continue
-        if stripped.startswith("$ ") and len(stripped) > 2:
-            result.append(line)
+        if stripped.startswith("$ "):
+            if "$" not in stripped[2:]:
+                result.append(line)
+                in_block_math = True
+            else:
+                # The math closes on this line, so the line is ordinary markup
+                # that happens to start with math; `format_line` protects the
+                # span and formats what surrounds it.
+                result.append(format_line(line))
             continue
 
         result.append(format_line(line))

@@ -1,17 +1,22 @@
-"""Tests for cjk_space_formatter."""
+"""Tests for typst-cjk-latin-space-remover.
+
+Inherits the Typst-relevant pinned behaviour of the legacy single-tool suite
+(Markdown-heading-specific cases dropped — this front-end is Typst-only) and
+adds inline/block raw protection. Cases marked `# MIRROR` pair with a Markdown
+case in mdformat-no-cjk-latin-space's suite; keep the pair in lockstep.
+"""
 
 import pytest
-
-from cjk_space_formatter import format_line, format_text
+from typst_cjk_latin_space_remover import format_line, format_text
 
 
 class TestFormatLine:
     """Unit tests for single-line formatting."""
 
-    def test_cjk_before_inline_math(self):
+    def test_cjk_before_inline_math(self):  # MIRROR: inline math
         assert format_line("テスト $x$ です") == "テスト$x$です"
 
-    def test_cjk_before_english(self):
+    def test_cjk_before_english(self):  # MIRROR: pure run
         assert format_line("日本語 English テスト") == "日本語Englishテスト"
 
     def test_english_spaces_preserved(self):
@@ -32,6 +37,12 @@ class TestFormatLine:
     def test_multiple_math_blocks(self):
         assert format_line("$A$ と $B$ の積") == "$A$と$B$の積"
 
+    def test_inline_raw_interior_preserved(self):  # MIRROR: raw interior kept
+        assert format_line("これは `行 列` です") == "これは`行 列`です"
+
+    def test_inline_raw_boundary_folded(self):  # MIRROR: inline raw boundary
+        assert format_line("これは `code` です") == "これは`code`です"
+
     def test_empty_line(self):
         assert format_line("") == ""
 
@@ -41,7 +52,7 @@ class TestFormatLine:
     def test_typst_list_item(self):
         assert format_line("- $K$ ：1量子ビットゲート") == "- $K$：1量子ビットゲート"
 
-    def test_number_adjacent_to_cjk(self):
+    def test_number_adjacent_to_cjk(self):  # MIRROR: pure run
         assert format_line("最大 3 個の") == "最大3個の"
 
     def test_cjk_punctuation_after_math(self):
@@ -61,18 +72,15 @@ class TestFormatLine:
         assert format_line("式 @eq:fidelity の計算") == "式@eq:fidelity の計算"
 
     def test_typst_ref_ascii_after(self):
-        """Space after @label before ASCII is already safe, verify no regression."""
         assert (
             format_line("see @eq:fidelity for details")
             == "see @eq:fidelity for details"
         )
 
     def test_typst_ref_no_trailing_space(self):
-        """@label at end of line (no trailing space) — nothing to protect."""
         assert format_line("参照 @eq:cost") == "参照@eq:cost"
 
-    def test_half_width_colon_space_preserved(self):
-        """Space after half-width colon before CJK must be preserved."""
+    def test_half_width_colon_space_preserved(self):  # MIRROR: colon kept
         assert format_line("注: これはテスト") == "注: これはテスト"
 
     def test_half_width_colon_in_context(self):
@@ -81,23 +89,12 @@ class TestFormatLine:
     def test_typst_ref_multiple(self):
         assert format_line("式 @eq:a と @eq:b を比較") == "式@eq:a と@eq:b を比較"
 
-    def test_hash_space_before_cjk_preserved(self):
-        """Space after # before CJK must be preserved (Markdown heading / Typst command)."""
-        assert format_line("# ほげ") == "# ほげ"
-
-    def test_multi_hash_heading_preserved(self):
-        """Multi-level Markdown headings preserve space before CJK."""
-        assert format_line("## セクション") == "## セクション"
-        assert format_line("### 見出し") == "### 見出し"
-
     @pytest.mark.parametrize(
         "input_text, expected",
         [
-            # Simple and dotted identifiers
             ("#sym.ballot 基底状態", "#sym.ballot 基底状態"),
             ("#sym.icon.ballot 基底状態", "#sym.icon.ballot 基底状態"),
             ("#strong 太字テスト", "#strong 太字テスト"),
-            # Parenthesised arguments (flat, nested, with strings)
             ("#text(red) 赤いテキスト", "#text(red) 赤いテキスト"),
             (
                 "#text(rgb(255, 0, 0)) 赤いテキスト",
@@ -107,14 +104,10 @@ class TestFormatLine:
                 '#set heading(numbering: "1.") 見出し',
                 '#set heading(numbering: "1.") 見出し',
             ),
-            # Escaped backslashes / quotes inside strings
             (r'#text("C:\\") 日本語', r'#text("C:\\") 日本語'),
             (r'#text("say \"hi\"") テスト', r'#text("say \"hi\"") テスト'),
-            # Before ASCII — space is already safe, must not break
             ("#sym.ballot some text", "#sym.ballot some text"),
-            # Inside list item
             ("+ #sym.ballot 基底状態の計算", "+ #sym.ballot 基底状態の計算"),
-            # No trailing space — nothing to protect
             ("#sym.ballot", "#sym.ballot"),
         ],
         ids=[
@@ -132,38 +125,21 @@ class TestFormatLine:
         ],
     )
     def test_typst_hash_expr(self, input_text, expected):
-        """Typst hash expressions preserve the terminating space."""
-        assert format_line(input_text) == expected
-
-    @pytest.mark.parametrize(
-        "input_text, expected",
-        [
-            ("Issue #123 の修正", "Issue #123の修正"),
-            ("#123 バグ", "#123バグ"),
-        ],
-        ids=["mid-sentence", "standalone"],
-    )
-    def test_markdown_issue_ref_not_protected(self, input_text, expected):
-        """Numeric #N tokens are not Typst expressions — space collapses normally."""
         assert format_line(input_text) == expected
 
     @pytest.mark.parametrize(
         "input_text, expected",
         [
             # Ordered-list markers preceding CJK keep their trailing space at a
-            # structural position: line start, optionally behind heading / list
-            # prefixes (Markdown #, Typst =, bullets - +), including indentation.
-            ("## 1. あわわわわ", "## 1. あわわわわ"),
-            ("# 1. あわわわわ", "# 1. あわわわわ"),
+            # structural position: line start, optionally behind Typst heading /
+            # bullet prefixes (=, - +), including indentation.
             ("== 1. あ", "== 1. あ"),
             ("- 1. あわわわわ", "- 1. あわわわわ"),
             ("+ 1. あ", "+ 1. あ"),
             ("1. あわわわわ", "1. あわわわわ"),
             ("12. あ", "12. あ"),
             ("  - 1. あ", "  - 1. あ"),
-            # Non-structural positions are ordinary text: a marker mid-line, a
-            # prose figure / step number, version strings, decimals, issue
-            # references, and bare periods all collapse the space before CJK.
+            # Non-structural positions are ordinary text: collapse before CJK.
             ("あ 1. ほげ", "あ1.ほげ"),
             ("Fig. 1. 図", "Fig. 1.図"),
             ("Step 1. 手順", "Step 1.手順"),
@@ -172,11 +148,8 @@ class TestFormatLine:
             ("3.14. あ", "3.14.あ"),
             ("1.5 個", "1.5個"),
             ("Fig. 図", "Fig.図"),
-            ("#1. バグ", "#1.バグ"),
         ],
         ids=[
-            "heading-nested",
-            "single-hash-nested",
             "typst-heading-nested",
             "bullet-nested",
             "plus-bullet-nested",
@@ -191,11 +164,9 @@ class TestFormatLine:
             "multi-dot",
             "decimal",
             "non-digit-period",
-            "issue-ref",
         ],
     )
     def test_ordered_marker_space(self, input_text, expected):
-        """Space after an ordered-list marker before CJK is preserved only at structural positions."""
         assert format_line(input_text) == expected
 
 
@@ -225,6 +196,49 @@ class TestFormatText:
         expected = "テスト\n$\n  V^T N V\n$ <euler-zyz>\n次の行\n"
         assert format_text(text) == expected
 
+    def test_multiline_block_math_opener_with_content(self):
+        """A `$ …` opener whose math continues on later lines protects the body.
+
+        `$ a +` does not close on its own line, so it opens a multi-line block;
+        the `日 本` inside must be left untouched and formatting must resume only
+        after the closing `$`.
+        """
+        text = "$ a +\n  日 本\n$\n後 text\n"
+        expected = "$ a +\n  日 本\n$\n後text\n"
+        assert format_text(text) == expected
+
+    def test_single_line_block_math_with_trailing_text_resumes(self):
+        """`$ x $ text` closes on its own line; it must not enter block state.
+
+        The math closes at the second `$`, so the line is self-contained and the
+        following lines must still be formatted (entering block-math state here
+        would swallow the rest of the file).
+        """
+        text = "$ x $ trailing\n後 text\n"
+        expected = "$ x $ trailing\n後text\n"
+        assert format_text(text) == expected
+
+    def test_single_line_block_math_formats_the_rest_of_its_own_line(self):
+        """A line whose math closes on it is ordinary markup, not a block.
+
+        Skipping it wholesale leaves the CJK spacing outside the math on that
+        line unformatted, which `format_line` on the same string does remove.
+        """
+        text = "$ x = 1 $ という 式\n"
+        expected = "$ x = 1 $という式\n"
+        assert format_text(text) == expected
+
+    def test_block_math_with_colon_label_resumes(self):
+        """A colon in the close label must still be recognised as the closer.
+
+        Typst labels routinely carry colons (`<eq:fidelity>`, matching `@eq:…`
+        refs). If the closer is missed, every later line stays stuck inside the
+        block-math state and is never formatted.
+        """
+        text = "前 text\n$\n  A B\n$ <eq:fidelity>\n後 text\n"
+        expected = "前text\n$\n  A B\n$ <eq:fidelity>\n後text\n"
+        assert format_text(text) == expected
+
     def test_no_cjk_text_unchanged(self):
         text = "Hello World\n$ x = 1 $\nfoo bar\n"
         assert format_text(text) == text
@@ -243,4 +257,26 @@ class TestFormatText:
         expected = (
             "== 定義\n\n任意の$U$を分解する。\n$ U = A B $ <def>\nここで$A$は行列。\n"
         )
+        assert format_text(text) == expected
+
+    def test_block_raw_interior_skipped(self):
+        """Raw block content is kept verbatim — CJK spaces inside are untouched."""
+        text = "```rust\nコード ブロック です\n```\n外側 text です\n"
+        expected = "```rust\nコード ブロック です\n```\n外側textです\n"
+        assert format_text(text) == expected
+
+    def test_block_raw_no_lang(self):
+        text = "```\n変換 されない\n```\n"
+        assert format_text(text) == text
+
+    def test_block_raw_then_resume(self):
+        """Formatting resumes after the closing fence."""
+        text = "前 text\n```\nそのまま です\n```\n後 text\n"
+        expected = "前text\n```\nそのまま です\n```\n後text\n"
+        assert format_text(text) == expected
+
+    def test_self_contained_single_line_raw_does_not_open_a_block(self):
+        """A fence that closes on its own line must not swallow what follows."""
+        text = "```py print(1) ```\n次 の行\n"
+        expected = "```py print(1) ```\n次の行\n"
         assert format_text(text) == expected
