@@ -15,7 +15,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/typst_cjk_latin_space_remover"]
-# See the mdformat package's pyproject for why this exclusion is load-bearing.
+# See the mdformat package's pyproject for why the tracked file is excluded.
 exclude = ["src/typst_cjk_latin_space_remover/_core.py"]
 
 # Build-time vendor of the shared core. See the mdformat

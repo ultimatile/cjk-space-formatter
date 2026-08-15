@@ -89,8 +89,11 @@ plugin via dollarmath, the Typst CLI via its own scanner.
 
 ```bash
 uv sync                       # installs both packages + core (editable) and pytest
-uv run pytest conformance packages
+uv run pytest                 # conformance/, packages/*/tests/ and tests/
 ```
 
 The core is resolved from the editable workspace install during development, so
 edits to `core/` take effect immediately without rebuilding the vendored copy.
+The packaging tests under `tests/` build both wheels, so they are slower than the
+rest of the suite and they are the only place the wheels' own core resolution is
+checked — run the whole suite rather than a subset.

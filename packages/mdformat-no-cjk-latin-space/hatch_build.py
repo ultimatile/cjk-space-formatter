@@ -8,15 +8,15 @@ built sdist works even though the core source lives outside the sdist — by the
 the vendored copy is already inside it, and a missing source is tolerated.
 
 The hook also supplies the wheel's own `_core.py`. The working tree's tracked
-`_core.py` imports the live workspace core, which is what development needs and
+`_core.py` prefers the live workspace core, which is what development needs and
 what a wheel must not do, so the wheel target excludes that file and this hook
-force-includes a shim in its place. Generating the shim rather than branching at
-runtime is what removes the `sys.path` lookup from the published package: a
-relative import is confined to the package's own `__path__`, so no installed
-distribution providing a top-level `cjk_latin_space` can take over.
+force-includes a shim in its place. The shim's import is relative, so it is
+confined to the package's own `__path__` and never consults `sys.path`: no
+installed distribution providing a top-level `cjk_latin_space` can take over.
 """
 
 import shutil
+import tempfile
 from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
@@ -62,15 +62,15 @@ class CustomBuildHook(BuildHookInterface):
         # core source nor a vendored copy fails there, rather than shipping a
         # shim whose relative import has no module to reach.
         if version == "standard" and self.target_name == "wheel":
-            shim = self._shim_path()
-            shim.parent.mkdir(parents=True, exist_ok=True)
+            # A temporary directory rather than the output directory: hatchling
+            # skips finalize on a hooks-only build and when packaging raises, so
+            # anything written where the artifacts land can outlive the build.
+            self._shim_dir = Path(tempfile.mkdtemp(prefix="core-shim-"))
+            shim = self._shim_dir / "_core.py"
             shim.write_text(_CORE_SHIM)
             build_data["force_include"][str(shim)] = _CORE_SHIM_DEST
 
     def finalize(self, version, build_data, artifact_path):
-        # The shim is scratch: it lives beside the built artifact only long
-        # enough to be copied into it.
-        self._shim_path().unlink(missing_ok=True)
-
-    def _shim_path(self):
-        return Path(self.directory) / f".core_shim_{_PACKAGE}.py"
+        shim_dir = getattr(self, "_shim_dir", None)
+        if shim_dir is not None:
+            shutil.rmtree(shim_dir, ignore_errors=True)

@@ -1,19 +1,22 @@
-"""Resolve the cjk-latin-space core for the development workspace.
+"""Resolve the cjk-latin-space core outside a published wheel.
 
-The workspace installs `cjk_latin_space` as an editable member, so this import
-always reflects live edits to `core/`. A published wheel never contains this
-file: the wheel target excludes it, and `hatch_build.py` force-includes a shim
-that reaches the build-time vendored copy through a relative import instead.
+A published wheel never contains this file: the wheel target excludes it, and
+`hatch_build.py` force-includes a shim that reaches the build-time vendored copy
+through a relative import. This file serves the development workspace, and any
+other install made from source without going through a wheel.
 
-The two contexts need opposite things, which is why the file differs between
-them. Development must not read the vendored copy, because uv refreshes that
-copy only on a forced reinstall and it therefore goes stale across ordinary
-edits to `core/`. A wheel must not read the top-level module, because any
-installed distribution can provide that name. A relative import resolves only
-within the package's own `__path__` and never consults `sys.path`, so the
-wheel's shim cannot be shadowed.
+The workspace installs `cjk_latin_space` as an editable member, so the first
+import reflects live edits to `core/`. That ordering is deliberate: uv refreshes
+the vendored copy only on a forced reinstall, so preferring it here would serve a
+stale core for the rest of a development session. The fallback covers an install
+with no workspace core to reach — `cjk-latin-space` is deliberately not a runtime
+dependency — where the vendored copy is the only core available. Without it this
+module would raise on import, taking the package's console script down with it.
 """
 
-from cjk_latin_space import CJK_CLASS, squash
+try:
+    from cjk_latin_space import CJK_CLASS, squash  # workspace: live core
+except ImportError:  # no workspace core: build-time vendored copy
+    from ._cjk_latin_space import CJK_CLASS, squash
 
 __all__ = ["CJK_CLASS", "squash"]
