@@ -13,6 +13,7 @@ import subprocess
 import sys
 import sysconfig
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -32,14 +33,27 @@ PACKAGE_IDS = [module for _, module in PACKAGES]
 FOREIGN_CORE = 'CJK_CLASS = "FOREIGN"\n\n\ndef squash(plain_run):\n    return "FOREIGN::" + plain_run\n'
 
 
+def _run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """Run a command, and on failure report what the child said.
+
+    `check=True` alone raises with the exit status only, which for a build
+    backend discards the one thing a reader needs -- the hook's own error and
+    the backend's traceback.
+    """
+    completed = subprocess.run(
+        command, capture_output=True, text=True, check=False, **kwargs
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"{' '.join(command)}\nexited {completed.returncode}\n"
+            f"--- stdout ---\n{completed.stdout}\n--- stderr ---\n{completed.stderr}"
+        )
+    return completed
+
+
 def _build(dist: str, flag: str, out_dir: Path, suffix: str) -> Path:
     """Build one artifact into out_dir and return its path there."""
-    subprocess.run(
-        ["uv", "build", "--package", dist, flag, "-o", str(out_dir)],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-    )
+    _run(["uv", "build", "--package", dist, flag, "-o", str(out_dir)], cwd=REPO_ROOT)
     produced = sorted(out_dir.glob(f"*{suffix}"))
     assert len(produced) == 1, produced
     return produced[0]
@@ -63,13 +77,7 @@ def artifacts(tmp_path_factory):
 
 
 def _run_probe(source: str) -> str:
-    completed = subprocess.run(
-        [sys.executable, "-c", source],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return completed.stdout.strip()
+    return _run([sys.executable, "-c", source]).stdout.strip()
 
 
 def _extract_wheel(wheel: Path, into: Path) -> Path:
@@ -163,14 +171,10 @@ def test_editable_install_outside_the_workspace(tmp_path, dist, module):
     venv = tmp_path / "venv"
     # Pinned to this interpreter so that the version-keyed site-packages path
     # computed below is right by construction rather than by coincidence.
-    subprocess.run(
-        ["uv", "venv", "--python", sys.executable, str(venv)],
-        check=True,
-        capture_output=True,
-    )
+    _run(["uv", "venv", "--python", sys.executable, str(venv)])
     # `--python` takes the environment's root directory, so no interpreter path
     # is spelled out here.
-    subprocess.run(
+    _run(
         [
             "uv",
             "pip",
@@ -179,9 +183,7 @@ def test_editable_install_outside_the_workspace(tmp_path, dist, module):
             str(venv),
             "-e",
             str(REPO_ROOT / "packages" / dist),
-        ],
-        check=True,
-        capture_output=True,
+        ]
     )
     # The `venv` scheme resolves to posix_venv or nt_venv per platform.
     site_packages = Path(
@@ -200,7 +202,7 @@ def test_editable_install_outside_the_workspace(tmp_path, dist, module):
     assert list(site_packages.glob(f"{module}-*.dist-info")), "install did not run"
     assert not (site_packages / module / "_core.py").exists()
 
-    resolved = subprocess.run(
+    resolved = _run(
         [
             "uv",
             "run",
@@ -210,12 +212,24 @@ def test_editable_install_outside_the_workspace(tmp_path, dist, module):
             "python",
             "-c",
             f"import {module} as m; print(m.squash.__module__)",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+        ]
     ).stdout.strip()
     assert resolved == f"{module}._cjk_latin_space"
+
+
+def test_a_wheel_build_leaves_no_shim_directory(tmp_path):
+    """The shim's scratch directory does not outlive the build that made it.
+
+    Cleanup rides on the TemporaryDirectory's finalizer in the build backend's
+    own process, so it is observable only from outside that process, as whatever
+    the build did or did not leave in the system temporary directory.
+    """
+    system_tmp = Path(tempfile.gettempdir())
+    before = set(system_tmp.glob("core-shim-*"))
+
+    _build(PACKAGES[0][0], "--wheel", tmp_path, ".whl")
+
+    assert not set(system_tmp.glob("core-shim-*")) - before
 
 
 @pytest.mark.parametrize(("dist", "module"), PACKAGES, ids=PACKAGE_IDS)
