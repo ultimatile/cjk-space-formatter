@@ -2,8 +2,8 @@
 
 A published wheel never contains this file: the wheel target excludes it, and
 `hatch_build.py` force-includes a shim that reaches the build-time vendored copy
-through a relative import. This file serves the development workspace, and any
-other install made from source without going through a wheel.
+through a relative import. That substitution is gated on the standard build, so
+this file is what an editable install and a plain source checkout use.
 
 The workspace installs `cjk_latin_space` as an editable member, so the first
 import reflects live edits to `core/`. That ordering is deliberate: uv refreshes
