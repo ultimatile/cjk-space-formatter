@@ -151,14 +151,14 @@ def test_sdist_keeps_the_tracked_development_core(artifacts, dist, module):
 def test_editable_install_outside_the_workspace(tmp_path, dist, module):
     """An editable install with no workspace core must still work.
 
-    Two things are pinned here. The shim is gated on the standard build, so PEP
-    660 must not receive it: an editable install redirects to the source tree,
-    where the tracked _core.py is what must stay in effect, and a force-included
-    shim would instead materialise a real package directory in site-packages and
-    shadow that redirect. And the tracked _core.py must fall back to the vendored
-    copy, because `cjk-latin-space` is deliberately not a runtime dependency and
-    so is absent here -- an import error would take the package's entry points
-    down with it.
+    Two things are pinned here. The shim is gated on the standard build, so a
+    PEP 660 install must not receive it: such an install redirects to the source
+    tree, where the tracked _core.py is what must stay in effect, and a file
+    appearing under site-packages is the signal that a standard-build artifact
+    slipped through the gate. And the tracked _core.py must fall back to the
+    vendored copy, because `cjk-latin-space` is deliberately not a runtime
+    dependency and so is absent here -- an import error would take the package's
+    entry points down with it.
     """
     venv = tmp_path / "venv"
     # Pinned to this interpreter so that the version-keyed site-packages path

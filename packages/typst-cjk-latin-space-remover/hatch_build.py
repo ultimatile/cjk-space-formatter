@@ -62,15 +62,13 @@ class CustomBuildHook(BuildHookInterface):
         # core source nor a vendored copy fails there, rather than shipping a
         # shim whose relative import has no module to reach.
         if version == "standard" and self.target_name == "wheel":
-            # A temporary directory rather than the output directory: hatchling
-            # skips finalize on a hooks-only build and when packaging raises, so
-            # anything written where the artifacts land can outlive the build.
-            self._shim_dir = Path(tempfile.mkdtemp(prefix="core-shim-"))
-            shim = self._shim_dir / "_core.py"
+            # A temporary directory rather than the output directory, so nothing
+            # is left where the artifacts land. Held on the instance so it
+            # outlives this call; its finalizer removes the directory when the
+            # build process exits, which also covers the paths where hatchling
+            # never calls finalize -- a hooks-only build, and one whose
+            # packaging step raises.
+            self._shim_dir = tempfile.TemporaryDirectory(prefix="core-shim-")
+            shim = Path(self._shim_dir.name) / "_core.py"
             shim.write_text(_CORE_SHIM)
             build_data["force_include"][str(shim)] = _CORE_SHIM_DEST
-
-    def finalize(self, version, build_data, artifact_path):
-        shim_dir = getattr(self, "_shim_dir", None)
-        if shim_dir is not None:
-            shutil.rmtree(shim_dir, ignore_errors=True)
