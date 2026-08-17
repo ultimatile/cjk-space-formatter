@@ -15,6 +15,19 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mdformat_no_cjk_latin_space"]
+# The tracked _core.py prefers the live workspace core, which is right for
+# development and wrong for a wheel, so hatch_build.py force-includes a shim at
+# this distribution path instead. Excluding the tracked file removes it from
+# selection outright, so the two never claim the same archive path.
+#
+# Without the exclusion the outcome would rest on hatchling reserving a
+# distribution path for the forced file: the target path when the forced source
+# lies outside the project root, and the source's own path otherwise. A selected
+# file at a reserved path is skipped, so an outside-root shim suppresses the
+# tracked file on its own — while an in-root one does not, and both entries then
+# reach the archive, where a duplicate path raises. Excluding the file keeps the
+# wheel's content out of that argument entirely.
+exclude = ["src/mdformat_no_cjk_latin_space/_core.py"]
 
 # Build-time vendor of the shared core. hatch_build.py copies
 # the core into src/ under a private name for both sdist and wheel; `artifacts`

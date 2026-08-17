@@ -89,7 +89,7 @@ plugin via dollarmath, the Typst CLI via its own scanner.
 
 ```bash
 uv sync                       # installs both packages + core (editable) and pytest
-uv run pytest conformance packages
+uv run pytest
 ```
 
 The core is resolved from the editable workspace install during development, so

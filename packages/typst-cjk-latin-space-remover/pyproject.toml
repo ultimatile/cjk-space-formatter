@@ -15,10 +15,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/typst_cjk_latin_space_remover"]
+# See the mdformat package's pyproject for why the tracked file is excluded.
+exclude = ["src/typst_cjk_latin_space_remover/_core.py"]
 
 # Build-time vendor of the shared core. See the mdformat
-# package's pyproject and hatch_build.py for the rationale; _core.py unifies the
-# dev (workspace core) and wheel (vendored copy) import paths.
+# package's pyproject and hatch_build.py for the rationale; the tracked _core.py
+# serves development and the wheel gets a force-included shim in its place.
 [tool.hatch.build]
 artifacts = ["src/typst_cjk_latin_space_remover/_cjk_latin_space.py"]
 
