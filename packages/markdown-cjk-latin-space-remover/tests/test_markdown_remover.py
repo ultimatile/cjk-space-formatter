@@ -230,6 +230,8 @@ KEPT = [
         "![日本 a]\n\n[日本 a]: /i.png\n", id="shortcut-image-reference-label"
     ),
     pytest.param("詳細は https://example.com を参照\n", id="bare-url"),
+    pytest.param("詳細は https://[::1]/日本 語\n", id="bare-url-split-after-scheme"),
+    pytest.param("詳細は https://&#101;x.com を参照\n", id="bare-url-with-entity"),
     pytest.param("詳細は www.example.com を参照\n", id="bare-www"),
     pytest.param("詳細は HTTPS://EXAMPLE.COM を参照\n", id="bare-url-uppercase"),
     pytest.param("詳細は WWW.EXAMPLE.COM を参照\n", id="bare-www-uppercase"),

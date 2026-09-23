@@ -172,11 +172,20 @@ def _protected(src: bytes, events: list[_Event]) -> bytearray:
     images, extended over the spaces on both sides.
     """
     mask = bytearray(len(src) + 1)
-    for ev, stack in _prose(events):
-        if any(s.tag in _LINKS for s in stack):
-            continue
-        for m in _BARE_LINK.finditer(src, ev.start, ev.end):
+    linkable = [
+        (ev.start, ev.end)
+        for ev, stack in _prose(events)
+        if not any(s.tag in _LINKS for s in stack)
+    ]
+    starts = [start for start, _ in linkable]
+    pos = 0
+    while m := _BARE_LINK.search(src, pos):
+        i = bisect_right(starts, m.start()) - 1
+        if i >= 0 and m.start() < linkable[i][1]:
             _protect_bare_link(src, mask, m.start())
+            pos = m.end()
+        else:
+            pos = m.start() + 1
     return mask
 
 
