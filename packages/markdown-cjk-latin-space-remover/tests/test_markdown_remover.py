@@ -1,11 +1,9 @@
 """Tests for markdown-cjk-latin-space-remover.
 
-`FOLDED` and `KEPT` reproduce the boundary and protection cases of the
-mdformat plugin's end-to-end suite, with the expected output taken as the
-input wherever mdformat merely normalises (`>日本語` stays without the space
-mdformat would add). Cases marked `# MIRROR` pair with a case in
-typst-cjk-latin-space-remover's suite; keep the two in lockstep. The rest
-covers hazards specific to editing source bytes in place.
+`FOLDED` holds inputs with their expected output after spaces are removed;
+`KEPT` holds inputs that must come back unchanged. Cases marked `# MIRROR`
+carry the same label in typst-cjk-latin-space-remover's suite and in
+mdformat-no-cjk-latin-space's; keep the three in lockstep.
 """
 
 import subprocess
@@ -14,11 +12,16 @@ import sys
 import pyromark
 import pytest
 
+import markdown_cjk_latin_space_remover
 from markdown_cjk_latin_space_remover import (
     _TRAIL_CJK,
     _deletions,
+    _Event,
     _parse,
+    _pass,
+    _Run,
     _runs,
+    _start_of,
     format_text,
 )
 from markdown_cjk_latin_space_remover.__main__ import main
@@ -27,7 +30,7 @@ from markdown_cjk_latin_space_remover.__main__ import main
 FOLDED = [
     pytest.param(
         "これは `code` です\n", "これは`code`です\n", id="code-span"
-    ),  # MIRROR: inline raw
+    ),  # MIRROR: inline raw boundary
     pytest.param(
         "行列 $x$ の計算\n", "行列$x$の計算\n", id="inline-math"
     ),  # MIRROR: inline math
@@ -88,11 +91,21 @@ FOLDED = [
         "[z][] 語\n\n[z]: /u\n", "[z][]語\n\n[z]: /u\n", id="collapsed-reference-fold"
     ),
     pytest.param(
+        "![z][] 語\n\n[z]: /i.png\n",
+        "![z][]語\n\n[z]: /i.png\n",
+        id="collapsed-image-reference-fold",
+    ),
+    pytest.param(
         "詳細は [ドキュメント](https://example.com/) を参照\n",
         "詳細は[ドキュメント](https://example.com/)を参照\n",
         id="link-destination-is-not-a-bare-url",
     ),
     pytest.param("価格は \\$5 です\n", "価格は\\$5です\n", id="escaped-dollar"),
+    pytest.param(
+        "$$\n\n    $$\n\n日本 English\n",
+        "$$\n\n    $$\n\n日本English\n",
+        id="double-dollar-in-indented-code-pairs",
+    ),
     pytest.param(
         "値 \\\\$x$ です\n", "値\\\\$x$です\n", id="escaped-backslash-then-math"
     ),
@@ -112,6 +125,27 @@ FOLDED = [
         id="double-dollar-in-code",
     ),
     pytest.param(
+        '+++\ntitle = "日本 語"\n+++\n\n日本 English\n',
+        '+++\ntitle = "日本 語"\n+++\n\n日本English\n',
+        id="toml-front-matter",
+    ),
+    pytest.param(
+        "---\na: $$\n---\n\n日本 English\n",
+        "---\na: $$\n---\n\n日本English\n",
+        id="double-dollar-in-front-matter",
+    ),
+    pytest.param(
+        "記号 \\$$ と\n\n日本 English\n",
+        "記号 \\$$ と\n\n日本English\n",
+        id="escaped-double-dollar",
+    ),
+    pytest.param("日本 $$x$$ 語\n", "日本$$x$$語\n", id="inline-display-math"),
+    pytest.param(
+        "[https://example.com を参照](x)\n",
+        "[https://example.comを参照](x)\n",
+        id="url-in-link-text-is-not-bare",
+    ),
+    pytest.param(
         "```\n$$\n```\n\n日本 English\n",
         "```\n$$\n```\n\n日本English\n",
         id="double-dollar-in-fenced-code",
@@ -127,6 +161,21 @@ FOLDED = [
         id="mid-document-metadata-kept",
     ),
     pytest.param(
+        "段落 a\n\n+++\n日本語の段落 English です\n+++\n",
+        "段落a\n\n+++\n日本語の段落 English です\n+++\n",
+        id="mid-document-toml-metadata-kept",
+    ),
+    pytest.param(
+        "段落 a\n\n---\n日本語の段落 English です\n...\n",
+        "段落a\n\n---\n日本語の段落 English です\n...\n",
+        id="metadata-closed-by-dots",
+    ),
+    pytest.param(
+        "---\nt: $x\n---\n\n日本 English\n",
+        "---\nt: $x\n---\n\n日本English\n",
+        id="dollar-in-front-matter",
+    ),
+    pytest.param(
         "日本 **(a)** 語 と English\n",
         "日本 **(a)** 語とEnglish\n",
         id="structure-check-keeps-some",
@@ -140,7 +189,7 @@ KEPT = [
     pytest.param("注&colon; これは\n", id="colon-as-named-entity"),
     pytest.param("```\nコード ブロック です\n```\n", id="fence"),
     pytest.param("    コード ブロック です\n", id="indented-code"),
-    pytest.param("- a\n\n\t\tcode 日本 語\n", id="zero-width-text"),
+    pytest.param("- a\n\n\t\tcode 日本 語\n", id="indented-code-in-list"),
     pytest.param("式は\n\n$$\nx = 1\n$$\n\nです\n", id="display-math"),
     pytest.param("式は\n\n$$\nx = 1\n$$ (eq)\n\nです\n", id="labelled-display-math"),
     pytest.param("Hello World\n", id="ascii"),
@@ -149,20 +198,47 @@ KEPT = [
     pytest.param("日本語 __English__ テスト\n", id="underscore-strong"),
     pytest.param("日本 **(a)** 語\n", id="structure-check-keeps-all"),
     pytest.param("日本 <b>x</b> 語\n", id="inline-html"),
+    pytest.param("日本 <https://a.com/$x> 語\n", id="dollar-in-autolink-text"),
     pytest.param("[日本 a]\n\n[日本 a]: /u\n", id="shortcut-reference-label"),
     pytest.param("[日本 a][]\n\n[日本 a]: /u\n", id="collapsed-reference-label"),
+    pytest.param(
+        "![日本 a][]\n\n[日本 a]: /i.png\n", id="collapsed-image-reference-label"
+    ),
+    pytest.param(
+        "![日本 a]\n\n[日本 a]: /i.png\n", id="shortcut-image-reference-label"
+    ),
     pytest.param("詳細は https://example.com を参照\n", id="bare-url"),
     pytest.param("詳細は www.example.com を参照\n", id="bare-www"),
     pytest.param("連絡は foo@bar.example.com まで\n", id="bare-email"),
+    pytest.param("連絡は mailto:foo@bar.example.com まで\n", id="bare-mailto"),
+    pytest.param("連絡は xmpp:foo@bar.example.com まで\n", id="bare-xmpp"),
     pytest.param("https://example.com/*日本 語*\n", id="bare-url-into-emphasis"),
     pytest.param("https://example.com/日本 *x*\n", id="bare-url-before-emphasis"),
+    pytest.param("詳細は https://ex.com/$x$ を参照\n", id="bare-url-containing-math"),
     pytest.param("前 $ \\text{日本 語} $ 後\n", id="spaced-inline-math"),
+    pytest.param("価格 \\\\$5 です\n", id="escaped-backslash-then-dollar"),
     pytest.param("$5\n\n$ \\text{日本 語} $\n", id="currency-then-spaced-math"),
     pytest.param("$$\n日本 語\n=\n日本 語\n$$\n", id="display-math-with-setext-line"),
+    *(
+        pytest.param(
+            f"$$\n\\text{{日本 語}}\n{line}\n\\text{{日本 語}}\n$$\n",
+            id=f"display-math-with-{name}-line",
+        )
+        for name, line in [
+            ("plus", "+ x"),
+            ("minus", "- x"),
+            ("heading", "# x"),
+            ("quote", "> x"),
+        ]
+    ),
+    pytest.param("価格は $5 と $10 です\n", id="currency-pair"),
     pytest.param(
         "$$\n\n日本 語\n\n    $$\n", id="display-math-closed-by-indented-code"
     ),
     pytest.param("$$\n\n日本 語\n\n<!-- $$ -->\n", id="display-math-closed-in-html"),
+    pytest.param(
+        '<div title="$$"></div>\n\n日本 English\n', id="unpaired-double-dollar-in-html"
+    ),
     pytest.param("", id="empty"),
 ]
 
@@ -246,8 +322,55 @@ def test_idempotent(src):
     assert format_text(once) == once
 
 
+def test_format_text_repeats_until_nothing_changes(monkeypatch):
+    """`format_text` repeats passes until one changes nothing.
+
+    A stand-in pass that removes one space per call exercises the loop.
+    """
+    monkeypatch.setattr(
+        markdown_cjk_latin_space_remover, "_pass", lambda text: text.replace(" ", "", 1)
+    )
+    assert format_text("a b c d\n") == "abcd\n"
+
+
+def test_pass_raises_if_a_deletion_removes_a_non_space(monkeypatch):
+    monkeypatch.setattr(
+        markdown_cjk_latin_space_remover,
+        "_delete",
+        lambda src, positions: src.replace("本".encode(), b""),
+    )
+    with pytest.raises(RuntimeError, match="other than a space"):
+        _pass("日本 English\n")
+
+
+def test_deletions_raises_on_a_non_space_candidate():
+    raw = "日 a".encode()
+    # The space's span points at the bytes of "日".
+    run = _Run(first=0, last=0, start=0, end=len(raw))
+    run.chars = ["日", " ", "a"]
+    run.spans = [(0, 3), (0, 3), (4, 5)]
+    with pytest.raises(RuntimeError, match="is not a space"):
+        _deletions(raw, [_Event("Text", "日 a", 0, len(raw))], run)
+
+
+def test_runs_raises_on_overlapping_text():
+    events = [
+        _Event("Start", "Paragraph", 0, 6),
+        _Event("Text", "abc", 0, 3),
+        _Event("Text", "bc", 1, 3),
+        _Event("End", "Paragraph", 0, 6),
+    ]
+    with pytest.raises(RuntimeError, match="overlapping"):
+        _runs(b"abcdef", events)
+
+
+def test_start_of_raises_on_an_unbalanced_end():
+    with pytest.raises(RuntimeError, match="unbalanced"):
+        _start_of([_Event("End", "Paragraph", 0, 1)], 0)
+
+
 def test_trailing_fold_does_not_reach_past_a_newline():
-    """`$` would match before the final newline and fold the newline away."""
+    """The trailing pattern matches at the end of the string only."""
     assert _TRAIL_CJK.search("日本 \n") is None
     assert _TRAIL_CJK.search("日本 ") is not None
 
@@ -258,7 +381,7 @@ def test_trailing_fold_does_not_reach_past_a_newline():
     ids=["asterisk", "underscore", "double-underscore"],
 )
 def test_emphasis_fold_depends_on_the_marker(src, folds):
-    """Decided before the structure check, which would also catch `_`."""
+    """`_deletions` folds next to `*` emphasis and not next to `_` emphasis."""
     text = src + "\n"
     events, raw = _parse(text), text.encode()
     positions = set().union(
@@ -271,6 +394,19 @@ def test_emphasis_fold_depends_on_the_marker(src, folds):
 
 CRLF_SRC = "日本 English\r\nテスト です\r\n".encode()
 CRLF_OUT = "日本English\r\nテストです\r\n".encode()
+
+
+def md_file(tmp_path, data, name="a.md"):
+    path = tmp_path / name
+    path.write_bytes(data)
+    return path
+
+
+def changed_and_clean(tmp_path):
+    return (
+        md_file(tmp_path, CRLF_SRC, "changed.md"),
+        md_file(tmp_path, CRLF_OUT, "clean.md"),
+    )
 
 
 def run_cli(*args, stdin=b""):
@@ -288,41 +424,79 @@ def test_cli_stdin_is_byte_exact():
 
 
 def test_cli_file_to_stdout_is_byte_exact(tmp_path):
-    path = tmp_path / "a.md"
-    path.write_bytes(CRLF_SRC)
+    path = md_file(tmp_path, CRLF_SRC)
     result = run_cli(str(path))
     assert result.stdout == CRLF_OUT
     assert path.read_bytes() == CRLF_SRC
 
 
 def test_cli_in_place_is_byte_exact(tmp_path):
-    path = tmp_path / "a.md"
-    path.write_bytes(CRLF_SRC)
+    path = md_file(tmp_path, CRLF_SRC)
     result = run_cli("-i", str(path))
     assert result.returncode == 0
     assert path.read_bytes() == CRLF_OUT
 
 
 def test_cli_check(tmp_path):
-    changed, clean = tmp_path / "changed.md", tmp_path / "clean.md"
-    changed.write_bytes(CRLF_SRC)
-    clean.write_bytes(CRLF_OUT)
-    assert run_cli("--check", str(clean)).returncode == 0
+    changed, clean = changed_and_clean(tmp_path)
+    result = run_cli("--check", str(clean))
+    assert result.returncode == 0
+    assert result.stdout == b""
     result = run_cli("--check", str(changed))
     assert result.returncode == 1
+    assert result.stdout.decode().splitlines() == [f"would reformat {changed}"]
     assert changed.read_bytes() == CRLF_SRC
     assert run_cli("--check", stdin=CRLF_SRC).returncode == 1
     assert run_cli("--check", stdin=CRLF_OUT).returncode == 0
 
 
+def test_cli_file_to_stdout_prints_unchanged_files_too(tmp_path):
+    path = md_file(tmp_path, CRLF_OUT)
+    result = run_cli(str(path))
+    assert result.returncode == 0
+    assert result.stdout == CRLF_OUT
+
+
+def test_cli_stdin_diff_keeps_line_endings():
+    result = run_cli("--diff", stdin=CRLF_SRC)
+    assert result.returncode == 0
+    assert "-日本 English\r\n".encode() in result.stdout
+    assert "+日本English\r\n".encode() in result.stdout
+
+
 def test_cli_diff_keeps_line_endings(tmp_path):
-    path = tmp_path / "a.md"
-    path.write_bytes(CRLF_SRC)
+    path = md_file(tmp_path, CRLF_SRC)
     result = run_cli("--diff", str(path))
     assert result.returncode == 0
     assert "-日本 English\r\n".encode() in result.stdout
     assert "+日本English\r\n".encode() in result.stdout
     assert path.read_bytes() == CRLF_SRC
+
+
+def test_cli_in_place_leaves_unchanged_files_alone(tmp_path):
+    changed, clean = changed_and_clean(tmp_path)
+    result = run_cli("-i", str(changed), str(clean))
+    assert result.returncode == 0
+    assert result.stdout.decode().splitlines() == [f"reformatted {changed}"]
+    assert changed.read_bytes() == CRLF_OUT
+    assert clean.read_bytes() == CRLF_OUT
+
+
+def test_cli_version():
+    result = run_cli("-V")
+    assert result.returncode == 0
+    assert result.stdout.startswith(b"markdown-cjk-latin-space-remover ")
+
+
+def test_cli_check_fails_if_any_file_would_change(tmp_path):
+    changed, clean = changed_and_clean(tmp_path)
+    assert run_cli("--check", str(changed), str(clean)).returncode == 1
+
+
+def test_cli_diff_of_unchanged_file_is_empty(tmp_path):
+    result = run_cli("--diff", str(md_file(tmp_path, CRLF_OUT)))
+    assert result.returncode == 0
+    assert result.stdout == b""
 
 
 def test_cli_missing_file(tmp_path):
@@ -331,9 +505,21 @@ def test_cli_missing_file(tmp_path):
     assert b"not found" in result.stderr
 
 
+def test_cli_directory(tmp_path):
+    result = run_cli(str(tmp_path))
+    assert result.returncode == 2
+    assert b"is not a file" in result.stderr
+
+
+def test_cli_in_place_writes_nothing_if_any_file_is_invalid(tmp_path):
+    changed = md_file(tmp_path, CRLF_SRC, "changed.md")
+    invalid = md_file(tmp_path, b"\xff", "invalid.md")
+    assert run_cli("-i", str(changed), str(invalid)).returncode == 2
+    assert changed.read_bytes() == CRLF_SRC
+
+
 def test_cli_invalid_utf8(tmp_path):
-    path = tmp_path / "a.md"
-    path.write_bytes(b"\xff\xfe")
+    path = md_file(tmp_path, b"\xff\xfe")
     assert run_cli(str(path)).returncode == 2
     assert run_cli(stdin=b"\xff").returncode == 2
 

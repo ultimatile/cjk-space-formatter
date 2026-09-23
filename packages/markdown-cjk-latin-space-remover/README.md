@@ -1,8 +1,10 @@
 # markdown-cjk-latin-space-remover
 
-A CLI that removes unwanted spaces between CJK characters and adjacent Latin
-letters or digits in Markdown files — the inverse of CSS
-`text-autospace: ideograph-alpha`, which *inserts* such spacing.
+A CLI that removes the spaces next to CJK characters in Markdown files: a run
+of spaces between two non-space characters goes when either side is CJK,
+except a space right after a half-width colon. This is the inverse of CSS
+`text-autospace: ideograph-alpha`, which *inserts* spacing between CJK and
+Latin text.
 
 ```
 日本語 English テスト   ->  日本語Englishテスト
@@ -12,39 +14,31 @@ letters or digits in Markdown files — the inverse of CSS
 
 ## Only the spaces change
 
-The file is parsed for byte positions and never re-rendered: the output is the
-input with some spaces deleted, byte for byte otherwise. Markdown dialects whose
-syntax a CommonMark renderer would rewrite — [Slidev](https://sli.dev/)'s
-per-slide front matter, HTML blocks, Vue components — pass through untouched,
-and so do line endings.
+The output is the input with some spaces deleted. Every other byte is
+unchanged, including line endings, HTML, Vue components, and
+[Slidev](https://sli.dev/)'s per-slide front matter.
 
-[`mdformat-no-cjk-latin-space`](../mdformat-no-cjk-latin-space) removes the same
-spaces as an mdformat plugin, which re-formats the whole document; use it when
-the repository already formats its Markdown with mdformat.
+[`mdformat-no-cjk-latin-space`](../mdformat-no-cjk-latin-space) is the mdformat
+plugin for repositories that format their Markdown with mdformat, which
+re-formats the whole document.
 
 ## Protected spans
 
-These keep every space they contain, and the spaces touching them where noted:
+These keep every space they contain:
 
 - code spans, fenced and indented code, and inline / display math
 - front matter (`---` YAML and `+++` TOML blocks, also mid-document)
-- bare URLs and email addresses, including the spaces on either side — GitHub
-  would otherwise read the following CJK as part of the link
-- the label of a `[label]` or `[label][]` reference link, which must keep
-  matching its definition
-- any top-level block containing a `$` that is not parsed as math, and anything
-  between two `$$` that are not parsed as math: another renderer may still read
-  math there
+- bare URLs and email addresses in prose outside links, together with the
+  spaces on either side
+- the label of a `[label]` or `[label][]` reference link or image
 
 A space at the edge of the prose folds into an adjacent code span, math, link,
 image, strikethrough, or `*` emphasis (`日本語 **English** テスト` ->
-`日本語**English**テスト`). It does not fold into `_` emphasis: CommonMark forbids
-`_` from opening or closing intraword and CJK count as word characters, so
-dropping the space would make the markers literal. Use `*` for emphasis around
-CJK.
+`日本語**English**テスト`). It does not fold into `_` emphasis; use `*` for
+emphasis around CJK.
 
-A removal that would change how the document parses — for example one that
-turns `**(a)**` next to CJK into literal asterisks — is not made.
+A deletion is kept only if pulldown-cmark parses the result to the same
+structure. For example, the spaces around `**(a)**` next to CJK stay.
 
 ## Install & use
 
@@ -57,9 +51,7 @@ cat your.md | markdown-cjk-latin-space-remover  # stdin -> stdout
 ```
 
 `--check` exits non-zero if a file would change; `--diff` shows a unified diff.
-From Python, `format_text(text)` returns the formatted string; there is no
-file-level helper, because reading through text mode would rewrite line
-endings.
+From Python, `format_text(text)` returns the formatted string.
 
 ## Non-goals
 
@@ -67,9 +59,11 @@ endings.
 - A CJK word *inside* emphasis or a link keeps the spaces around it:
   `Foo **設定** bar` is unchanged
   ([#9](https://github.com/ultimatile/cjk-space-formatter/issues/9)).
-- A CJK heading's generated anchor id follows the squashed text, so a link to
-  the old slug (`[…](#見出し-です)`) needs updating after the first run.
-- A `---` line after a blank line, directly followed by text, can open front
-  matter when another `---` line follows later; prose between two such lines is
-  left alone.
-- Pathological inputs, such as a bare URL containing `$x$`, are out of scope.
+- If a `$` or `$$` in the prose is not parsed as math, the block around it, or
+  the text from that `$$` to the next one (or to the end of the file), may be
+  left unedited.
+- Headings are edited like other prose; links to their generated anchors
+  (`[…](#見出し-です)`) are not.
+- A top-level `---` line that follows a blank line and is directly followed by
+  text starts front matter if a `---` or `...` line comes later; the text
+  between is not edited.

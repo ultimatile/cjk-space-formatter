@@ -9,6 +9,7 @@ the live workspace core -- so the two differ, and these tests pin each side.
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 import sysconfig
@@ -75,6 +76,35 @@ def artifacts(tmp_path_factory):
             "sdist": _build(dist, "--sdist", out_dir, ".tar.gz"),
         }
     return built
+
+
+def _code_without_docstring(path: Path) -> str:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    if ast.get_docstring(tree) is not None:
+        tree.body = tree.body[1:]
+    return ast.dump(tree)
+
+
+def test_per_package_copies_stay_identical():
+    """Each package carries its own `hatch_build.py` and `_core.py`.
+
+    The hooks must be identical apart from `_PACKAGE`; the resolvers must have
+    identical code, and their docstrings are not compared.
+    """
+    hooks = {
+        (REPO_ROOT / "packages" / dist / "hatch_build.py")
+        .read_text(encoding="utf-8")
+        .replace(f'_PACKAGE = "{module}"', "_PACKAGE = ...")
+        for dist, module in PACKAGES
+    }
+    assert len(hooks) == 1
+    resolvers = {
+        _code_without_docstring(
+            REPO_ROOT / "packages" / dist / "src" / module / "_core.py"
+        )
+        for dist, module in PACKAGES
+    }
+    assert len(resolvers) == 1
 
 
 def _run_probe(source: str) -> str:

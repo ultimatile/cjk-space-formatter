@@ -27,10 +27,9 @@ This repository ships separate packages for Markdown and Typst:
 | **Markdown** | [`mdformat-no-cjk-latin-space`](packages/mdformat-no-cjk-latin-space)           | mdformat plugin | usable      |
 | **Typst**    | [`typst-cjk-latin-space-remover`](packages/typst-cjk-latin-space-remover)       | standalone CLI  | provisional |
 
-For Markdown, the CLI deletes the spaces and changes nothing else, so it is safe
-on dialects such as Slidev decks. The plugin runs inside mdformat, which
-re-formats the whole document; choose it when the repository already formats
-its Markdown with mdformat.
+For Markdown, the CLI deletes spaces and leaves every other byte unchanged. The
+plugin runs inside mdformat, which re-formats the whole document; it is for
+repositories that already format their Markdown with mdformat.
 
 Each package's README has install and usage instructions. None is on PyPI; all
 install from this repository.
@@ -41,10 +40,11 @@ in the package README, and the package remains unreleased.
 ## Migrating from `cjk-space-formatter`
 
 The single `cjk-space-formatter` CLI that handled both formats is **deprecated**
-in favour of the tools above. For Markdown,
-`markdown-cjk-latin-space-remover file.md` replaces `cjk-space-formatter file.md`.
-For Typst, `typst-cjk-latin-space-remover file.typ` replaces
-`cjk-space-formatter file.typ`, subject to the provisional status above.
+in favour of the tools above. For Markdown, `markdown-cjk-latin-space-remover`
+takes the same `-i` / `--check` / `--diff` flags as `cjk-space-formatter`;
+without a flag it prints every file, including unchanged ones. For Typst,
+`typst-cjk-latin-space-remover file.typ` replaces `cjk-space-formatter file.typ`,
+subject to the provisional status above.
 
 ## Repository layout
 

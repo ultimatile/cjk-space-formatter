@@ -1,8 +1,7 @@
 """CLI entry point for markdown-cjk-latin-space-remover.
 
-Files and streams are read and written as bytes and decoded as UTF-8 without
-newline translation: `format_text` changes nothing but spaces, and text-mode
-I/O would rewrite CRLF line endings behind its back.
+Input and formatted output are bytes, decoded and encoded as UTF-8 with no
+newline translation. Status and error messages are printed as text.
 """
 
 import argparse
@@ -16,7 +15,7 @@ from . import format_text
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="markdown-cjk-latin-space-remover",
-        description="Remove unnecessary spaces between CJK and Latin/digits in Markdown files",
+        description="Remove spaces next to CJK characters in Markdown files",
     )
     parser.add_argument(
         "-V",
@@ -56,29 +55,36 @@ def main() -> int:
     if not args.files:
         parser.error("no files specified (pipe to stdin or pass file paths)")
 
-    any_changed = False
+    # Every file is read and decoded before any is written.
+    contents = []
     for path in args.files:
-        if not path.exists():
-            print(f"error: {path} not found", file=sys.stderr)
+        if not path.is_file():
+            reason = "is not a file" if path.exists() else "not found"
+            print(f"error: {path} {reason}", file=sys.stderr)
             return 2
-
         content = _decode(str(path), path.read_bytes())
         if content is None:
             return 2
+        contents.append((path, content))
+
+    any_changed = False
+    for path, content in contents:
         formatted = format_text(content)
         changed = content != formatted
 
-        if changed:
-            any_changed = True
-            if args.check:
+        any_changed |= changed
+        if args.check:
+            if changed:
                 print(f"would reformat {path}")
-            elif args.diff:
+        elif args.diff:
+            if changed:
                 _print_diff(str(path), content, formatted)
-            elif args.in_place:
+        elif args.in_place:
+            if changed:
                 path.write_bytes(formatted.encode())
                 print(f"reformatted {path}")
-            else:
-                sys.stdout.buffer.write(formatted.encode())
+        else:  # a filter: the output is the whole file, changed or not
+            sys.stdout.buffer.write(formatted.encode())
 
     return 1 if args.check and any_changed else 0
 

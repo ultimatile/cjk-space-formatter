@@ -1,12 +1,10 @@
-"""Remove CJK<->Latin/digit spaces in Markdown, deleting nothing else.
+"""Remove spaces next to CJK characters in Markdown by deleting U+0020 bytes.
 
-The document is parsed with pyromark (pulldown-cmark) for byte ranges only and
-is never re-rendered: the result is the input with some U+0020 bytes removed.
-Syntax the parser does not know — Slidev's per-slide front matter, HTML, Vue
-components — therefore passes through byte for byte. The format-independent
-CJK-Latin invariant is delegated to the shared core's `squash`; this module
-decides which bytes `squash` may see, which spaces at a run's edge fold into an
-adjacent construct, and which regions no edit may touch.
+pyromark (pulldown-cmark) supplies byte ranges; the output is the input with
+some spaces deleted and is not re-rendered. The shared core's `squash` picks the
+spaces inside a run of prose; this module builds the runs, adds the spaces at a
+run's edge next to a foldable construct, and drops deletions in protected
+regions.
 """
 
 import re
@@ -16,7 +14,7 @@ import pyromark
 
 from ._core import CJK_CLASS, squash
 
-__all__ = ["CJK_CLASS", "format_text", "squash"]
+__all__ = ["format_text"]
 
 _O = pyromark.Options
 _OPTIONS = (
@@ -29,16 +27,12 @@ _OPTIONS = (
 )
 
 _CJK = f"[{CJK_CLASS}]"
-# Spaces between a CJK character and the end of a run. `\Z`, not `$`: `$` also
-# matches before a final newline and would fold that newline away with them.
+# Spaces between a CJK character and the end / start of a run's text.
 _TRAIL_CJK = re.compile(f"{_CJK}( +)\\Z")
 _LEAD_CJK = re.compile(f"\\A( +){_CJK}")
 
-# GFM autolink literals, which pulldown-cmark does not parse. GitHub and
-# linkify-it end such a link only at whitespace or `<`, so dropping the space
-# after one makes the following CJK part of the URL. Written from the GFM
-# spec's autolink extension; matching more than GFM does only ever keeps a
-# space.
+# Bare URLs, `www.` hosts, and email addresses, which pulldown-cmark leaves in
+# Text.
 _BARE_LINK = re.compile(
     rb"(?:https?://|www\.)[^\s<]+|(?:(?:mailto|xmpp):)?[\w.+-]+@[\w-]+(?:\.[\w-]+)+",
     re.IGNORECASE,
@@ -49,19 +43,16 @@ _SPACE = 0x20
 _BACKSLASH = 0x5C
 _ASTERISK = 0x2A
 
-# Leaf events a boundary space folds across: opaque spans whose interior is
-# never edited.
+# Leaf events a space at a run's edge folds across.
 _FOLD_LEAVES = frozenset({"Code", "InlineMath", "DisplayMath"})
-# Containers a boundary space folds across unconditionally. Emphasis folds only
-# when written with `*`: CommonMark forbids `_` from opening or closing
-# intraword and CJK count as word characters, so `日本語_x_` renders literally.
+# Containers a space at a run's edge folds across. Emphasis and strong
+# emphasis fold only when their delimiter is `*`.
 _FOLD_CONTAINERS = frozenset({"Link", "Image", "Strikethrough"})
 _EMPHASIS = frozenset({"Emphasis", "Strong"})
-# Reference links whose label is also the lookup key: editing the label text
-# would stop it matching its definition.
-_LABEL_IS_KEY = frozenset(
-    {"Shortcut", "ShortcutUnknown", "Collapsed", "CollapsedUnknown"}
-)
+_LINKS = frozenset({"Link", "Image"})
+# Reference-link types whose label text is not edited; the label is the key
+# that matches the link definition.
+_LABEL_IS_KEY = frozenset({"Shortcut", "Collapsed"})
 
 
 @dataclass(frozen=True)
@@ -88,15 +79,14 @@ class _Run:
     """Contiguous prose made of Text fragments, with each character's source bytes.
 
     `spans[i]` is `(start, end)` when character i is spelled literally in the
-    source, and None when it came from an entity reference: only literal
-    characters may be deleted.
+    source, and None when it came from an entity reference. `_deletions` skips
+    characters whose span is None.
     """
 
     first: int  # index of the first Text event
     last: int  # index of the last Text event
     start: int
     end: int
-    parent: int
     chars: list[str] = field(default_factory=list)
     spans: list[tuple[int, int] | None] = field(default_factory=list)
 
@@ -113,12 +103,11 @@ def _parse(text: str) -> list[_Event]:
 
 
 def _shape(events: list[_Event]) -> list:
-    """The document structure with prose left out, for before/after comparison.
+    """The event stream with prose reduced to a marker.
 
     Every non-Text event is kept with its full value (link destinations, code
     and math content, heading levels, table alignment); each stretch of
-    consecutive Text collapses to one marker, since deleting a space may split
-    or merge fragments without changing what the document is.
+    consecutive Text events becomes one `"Text"` marker.
     """
     shape = []
     for ev in events:
@@ -140,20 +129,22 @@ def _escaped(src: bytes, pos: int) -> bool:
 def _protected(src: bytes, events: list[_Event]) -> bytearray:
     """Mark the bytes no edit may touch.
 
-    Where pulldown-cmark leaves a `$` unconsumed, another renderer may still
-    read math there, and editing inside that math is the one corruption this
-    tool exists to avoid. Inline math cannot leave its paragraph, so a top-level
-    block holding an unconsumed `$` is protected whole. Display math can span
-    blank lines and even end in what pulldown-cmark parses as indented code or
-    HTML, so unconsumed `$$` tokens are paired across the whole document.
+    - A top-level block with a `$` byte, not escaped by a backslash, inside
+      the source range of one of its Text events (outside code and front
+      matter).
+    - From an unescaped `$$` outside math, fenced code, code spans, and front
+      matter to the next such `$$`, pairing them in order; an unpaired last one
+      protects to the end.
+    - A bare URL or email that starts in Text outside links and images,
+      extended over the spaces on both sides.
     """
     mask = bytearray(len(src) + 1)
 
     def protect(start: int, end: int) -> None:
         mask[start:end] = b"\x01" * (end - start)
 
-    opaque = []  # spans a `$$` inside of is not a delimiter
-    linkable = []  # prose a GFM renderer would scan for bare links
+    opaque = []  # spans whose `$$` are not counted
+    linkable = []  # Text ranges outside links, where bare links are matched
     stack: list[_Event] = []
     for ev in events:
         if ev.kind == "Start":
@@ -169,7 +160,7 @@ def _protected(src: bytes, events: list[_Event]) -> bytearray:
         elif ev.kind == "Text" and stack:
             if any(s.tag in ("CodeBlock", "MetadataBlock") for s in stack):
                 continue
-            if not any(s.tag in ("Link", "Image") for s in stack):
+            if not any(s.tag in _LINKS for s in stack):
                 linkable.append((ev.start, ev.end))
             for pos in range(ev.start, ev.end):
                 if src[pos] == ord("$") and not _escaped(src, pos):
@@ -186,10 +177,6 @@ def _protected(src: bytes, events: list[_Event]) -> bytearray:
         end = tokens[i + 1] + 2 if i + 1 < len(tokens) else len(src)
         protect(tokens[i], end)
 
-    # A match counts only where it starts in prose: a link destination or an
-    # autolink's own text is already a link, and GFM does not linkify inside
-    # one. The match may still run on past that Text into following markup,
-    # exactly as GitHub's link would.
     for m in _BARE_LINK.finditer(src):
         start, end = m.span()
         if not any(s <= start < e for s, e in linkable):
@@ -206,16 +193,16 @@ def _hides_text(start: _Event) -> bool:
     """Whether Text inside this container must not be edited."""
     if start.tag in ("CodeBlock", "MetadataBlock"):
         return True
-    return start.tag in ("Link", "Image") and start.attrs["link_type"] in _LABEL_IS_KEY
+    return start.tag in _LINKS and start.attrs["link_type"] in _LABEL_IS_KEY
 
 
 def _runs(src: bytes, events: list[_Event]) -> list[_Run]:
     """Join Text fragments into runs of prose.
 
-    pulldown-cmark splits Text at every character that might have been markup
-    (`*`, `[`, `$`, `_`, ...), and an escape's backslash lies between two
-    fragments in no event at all. Fragments of one parent that touch, or are
-    separated only by such a backslash, are one piece of prose.
+    Text events join when their ranges touch or are separated by a single
+    backslash byte (an escape). Text inside code, front
+    matter, and shortcut / collapsed reference-link and image labels is
+    skipped.
     """
     runs: list[_Run] = []
     stack: list[int] = []
@@ -229,25 +216,19 @@ def _runs(src: bytes, events: list[_Event]) -> list[_Run]:
         if ev.kind == "End":
             excluded -= _hides_text(events[stack.pop()])
             continue
-        if ev.kind != "Text" or excluded or ev.start == ev.end:
+        if ev.kind != "Text" or excluded:
             continue
         if ev.start < previous_end:
             raise RuntimeError(f"overlapping Text ranges at byte {ev.start}")
         previous_end = ev.end
 
-        parent = stack[-1] if stack else -1
         run = runs[-1] if runs else None
-        joins = (
-            run is not None
-            and run.last == i - 1
-            and run.parent == parent
-            and (
-                run.end == ev.start
-                or (ev.start - run.end == 1 and src[run.end] == _BACKSLASH)
-            )
+        joins = run is not None and (
+            run.end == ev.start
+            or (ev.start - run.end == 1 and src[run.end] == _BACKSLASH)
         )
         if not joins:
-            run = _Run(first=i, last=i, start=ev.start, end=ev.end, parent=parent)
+            run = _Run(first=i, last=i, start=ev.start, end=ev.end)
             runs.append(run)
         run.last, run.end = i, ev.end
 
@@ -259,7 +240,7 @@ def _runs(src: bytes, events: list[_Event]) -> list[_Run]:
                 run.chars.append(ch)
                 run.spans.append((pos, pos + width))
                 pos += width
-        else:  # an entity reference: its decoded text is not in the source
+        else:  # an entity reference
             run.chars.extend(ev.value)
             run.spans.extend([None] * len(ev.value))
     return runs
@@ -290,13 +271,11 @@ def _folds_before(src: bytes, events: list[_Event], run: _Run) -> bool:
         return ev.end == run.start
     if ev.kind != "End":
         return False
-    # A collapsed reference `[x][]` ends its Link range before the `[]`.
+    # A collapsed reference `[x][]` is adjacent across the `[]` after its range.
     opened = _start_of(events, run.first - 1)
     gap = run.start - ev.end
     if gap == 2 and src[ev.end : run.start] == b"[]":
-        adjacent = opened.tag == "Link" and opened.attrs["link_type"].startswith(
-            "Collapsed"
-        )
+        adjacent = opened.tag in _LINKS and opened.attrs["link_type"] == "Collapsed"
     else:
         adjacent = gap == 0
     if not adjacent:
@@ -328,7 +307,7 @@ def _deletions(src: bytes, events: list[_Event], run: _Run) -> set[int]:
     for i, ch in enumerate(text):
         if j < len(squashed) and squashed[j] == ch:
             j += 1
-        else:  # squash removes spaces and nothing else
+        else:
             doomed.add(i)
     if _folds_after(src, events, run) and (m := _TRAIL_CJK.search(text)):
         doomed.update(range(*m.span(1)))
@@ -384,10 +363,10 @@ def _pass(text: str) -> str:
     if not groups:
         return text
 
-    # Deleting a space can change structure: `日本 _a_ 語` loses its emphasis
-    # once the space goes, since the `_` becomes intraword. Rather than
-    # re-derive CommonMark's delimiter rules here, keep an edit only if the
-    # parser still sees the same document.
+    # Keep the deletions only if the result has the same `_shape`; otherwise
+    # add groups one at a time, keeping each that preserves it. In
+    # `日本 **(a)** 語` both spaces stay: deleting either one turns the `**`
+    # into literal text.
     shape = _shape(events)
     accepted = set().union(*groups)
     if _shape(_parse(_delete(src, accepted).decode())) != shape:
@@ -404,12 +383,11 @@ def _pass(text: str) -> str:
 
 
 def format_text(text: str) -> str:
-    """Remove unwanted spaces adjacent to CJK characters in Markdown `text`.
+    """Remove spaces adjacent to CJK characters in Markdown `text`.
 
-    The result is `text` with some U+0020 characters deleted and nothing else
-    changed, and pulldown-cmark parses it to the same structure. Code, math,
-    front matter, bare URLs, and reference-link labels keep their spaces.
-    Formatting the result again changes nothing.
+    The result is `text` with some U+0020 characters deleted, and pulldown-cmark
+    parses it to the same `_shape`. Passes repeat until one changes nothing, so
+    `format_text` of the result returns it unchanged.
     """
     while True:
         out = _pass(text)

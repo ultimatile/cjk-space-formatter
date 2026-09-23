@@ -2,8 +2,9 @@
 
 Inherits the Typst-relevant pinned behaviour of the legacy single-tool suite
 (Markdown-heading-specific cases dropped — this front-end is Typst-only) and
-adds inline/block raw protection. Cases marked `# MIRROR` pair with a Markdown
-case in mdformat-no-cjk-latin-space's suite; keep the pair in lockstep.
+adds inline/block raw protection. Cases marked `# MIRROR` carry the same label
+in the two Markdown suites (mdformat-no-cjk-latin-space's and
+markdown-cjk-latin-space-remover's); keep the three in lockstep.
 """
 
 import pytest

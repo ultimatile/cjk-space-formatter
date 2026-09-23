@@ -1,7 +1,7 @@
 [project]
 name = "markdown-cjk-latin-space-remover"
 version = "0.1.0"
-description = "CLI: remove spaces between CJK and Latin/digits in Markdown files, deleting only those spaces"
+description = "CLI: remove spaces next to CJK characters in Markdown files without re-rendering them"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["pyromark>=0.9.13"]
