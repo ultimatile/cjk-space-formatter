@@ -51,7 +51,8 @@ _OPAQUE_LEAVES = frozenset({"Code", "InlineMath", "DisplayMath"})
 # Containers whose Text is never edited.
 _RAW_BLOCKS = frozenset({"CodeBlock", "MetadataBlock"})
 # Containers a space at a run's edge is deleted across, unless the structure
-# check drops the deletion (as it does next to a single-`~` strikethrough).
+# check drops the deletion (as it does between a CJK letter and a single-`~`
+# strikethrough).
 # Emphasis and strong emphasis are included only when their delimiter is `*`.
 _FOLD_CONTAINERS = frozenset({"Link", "Image", "Strikethrough"})
 _EMPHASIS = frozenset({"Emphasis", "Strong"})
