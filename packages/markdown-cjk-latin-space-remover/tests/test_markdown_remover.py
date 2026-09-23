@@ -435,6 +435,21 @@ def test_whole_document_check_drops_what_blocks_accepted(monkeypatch):
     assert format_text(src) == "日本 **(a)** 語\n\n日本English\n"
 
 
+@pytest.mark.parametrize("split", ["[", "]", "*", "_", "&#101;", "\\-", "`"])
+@pytest.mark.parametrize(
+    "template",
+    ["https://{}a.com/x", "https://a.com/{}x", "www.{}a.com"],
+    ids=["after-scheme", "in-path", "after-www"],
+)
+def test_bare_url_protection_ignores_how_text_is_split(template, split):
+    """A bare URL keeps the spaces around it wherever pulldown-cmark splits it."""
+    url = template.format(split)
+    src = f"詳細は {url} を参照\n"
+    texts = [ev for ev in _parse(src) if ev.kind == "Text"]
+    assert len(texts) > 1  # the URL spans several Text events
+    assert f"詳細は {url} を参照" in format_text(src)
+
+
 def test_trailing_fold_does_not_reach_past_a_newline():
     """The trailing pattern matches at the end of the string only."""
     assert _TRAIL_CJK.search("日本 \n") is None
