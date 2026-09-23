@@ -1,4 +1,4 @@
-"""Packaging invariants for the two published wheels.
+"""Packaging invariants for the published wheels.
 
 A wheel must reach the shared core through a relative import. That is the whole
 protection: a relative import resolves within the package's own ``__path__`` and
@@ -25,6 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = [
     ("mdformat-no-cjk-latin-space", "mdformat_no_cjk_latin_space"),
     ("typst-cjk-latin-space-remover", "typst_cjk_latin_space_remover"),
+    ("markdown-cjk-latin-space-remover", "markdown_cjk_latin_space_remover"),
 ]
 PACKAGE_IDS = [module for _, module in PACKAGES]
 
@@ -61,7 +62,7 @@ def _build(dist: str, flag: str, out_dir: Path, suffix: str) -> Path:
 
 @pytest.fixture(scope="session")
 def artifacts(tmp_path_factory):
-    """Build both packages' wheel and sdist once for the whole session.
+    """Build every package's wheel and sdist once for the whole session.
 
     The artifacts land outside the source tree, so a run killed mid-build leaves
     nothing behind for a later build to pick up.
@@ -121,8 +122,10 @@ def test_wheel_ignores_a_foreign_top_level_core(artifacts, tmp_path, dist, modul
     assert _run_probe(probe) == "日本語test"
 
 
-def test_typst_public_api_from_the_wheel_ignores_a_foreign_core(artifacts, tmp_path):
-    module = "typst_cjk_latin_space_remover"
+@pytest.mark.parametrize(
+    "module", ["typst_cjk_latin_space_remover", "markdown_cjk_latin_space_remover"]
+)
+def test_public_api_from_the_wheel_ignores_a_foreign_core(artifacts, tmp_path, module):
     package_root = _extract_wheel(artifacts[module]["wheel"], tmp_path / "wheel")
     foreign = tmp_path / "foreign"
     foreign.mkdir()

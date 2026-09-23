@@ -1,6 +1,6 @@
 """Conformance corpus for the cjk-latin-space core.
 
-The single machine-shared contract both front-ends must satisfy. Inputs are
+The single machine-shared contract every front-end must satisfy. Inputs are
 PURE RUNS — no protected spans (no math, code, refs) — so there is no target
 dimension: `squash(str) -> str` is exercised directly. Front-end-specific
 behaviour (protected spans, boundaries, document re-normalisation) is tested in
