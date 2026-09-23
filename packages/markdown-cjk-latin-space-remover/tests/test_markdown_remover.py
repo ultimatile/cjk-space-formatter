@@ -578,6 +578,7 @@ def test_cli_directory(tmp_path):
     assert b"is a directory" in result.stderr
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="needs /bin/bash")
 def test_cli_reads_a_pipe_path():
     result = subprocess.run(
         f"{sys.executable} -m markdown_cjk_latin_space_remover <(printf '日本 English')",
@@ -676,7 +677,10 @@ def test_cli_reports_an_internal_check_failure_on_stdin(monkeypatch, capsys):
     assert "<stdin>" in capsys.readouterr().err
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any file")
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="needs POSIX file modes, which root bypasses",
+)
 def test_cli_unreadable_file(tmp_path):
     path = md_file(tmp_path, CRLF_SRC)
     path.chmod(0)
@@ -688,7 +692,10 @@ def test_cli_unreadable_file(tmp_path):
     assert b"Permission denied" in result.stderr
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can write any file")
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="needs POSIX file modes, which root bypasses",
+)
 def test_cli_in_place_on_a_read_only_file(tmp_path):
     path = md_file(tmp_path, CRLF_SRC)
     path.chmod(0o444)
