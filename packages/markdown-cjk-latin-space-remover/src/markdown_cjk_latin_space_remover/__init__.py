@@ -8,6 +8,7 @@ regions.
 """
 
 import re
+from bisect import bisect_right
 from dataclasses import dataclass, field
 
 import pyromark
@@ -38,8 +39,7 @@ _BARE_LINK = re.compile(
     re.IGNORECASE,
 )
 
-_BOM = "﻿"
-_MAX_REJECTIONS = 32
+_BOM = "\ufeff"
 
 _SPACE = 0x20
 _BACKSLASH = 0x5C
@@ -50,14 +50,18 @@ _ASTERISK = 0x2A
 _OPAQUE_LEAVES = frozenset({"Code", "InlineMath", "DisplayMath"})
 # Containers whose Text is never edited.
 _RAW_BLOCKS = frozenset({"CodeBlock", "MetadataBlock"})
-# Containers a space at a run's edge folds across. Emphasis and strong
-# emphasis fold only when their delimiter is `*`.
+# Containers a space at a run's edge is deleted across, unless the structure
+# check drops the deletion (as it does next to a single-`~` strikethrough).
+# Emphasis and strong emphasis are included only when their delimiter is `*`.
 _FOLD_CONTAINERS = frozenset({"Link", "Image", "Strikethrough"})
 _EMPHASIS = frozenset({"Emphasis", "Strong"})
 _LINKS = frozenset({"Link", "Image"})
+_INLINE = _FOLD_CONTAINERS | _EMPHASIS
 # Reference-link types whose label text is not edited; the label is the key
 # that matches the link definition.
 _LABEL_IS_KEY = frozenset({"Shortcut", "Collapsed"})
+# Link types of `<...>` autolinks.
+_AUTOLINKS = frozenset({"Autolink", "Email"})
 
 
 @dataclass(frozen=True)
@@ -90,7 +94,6 @@ class _Run:
 
     first: int  # index of the first Text event
     last: int  # index of the last Text event
-    start: int
     end: int
     chars: list[str] = field(default_factory=list)
     spans: list[tuple[int, int] | None] = field(default_factory=list)
@@ -147,16 +150,18 @@ def _prose(events: list[_Event]):
             yield ev, stack
 
 
-def _unparsed_dollar(src: bytes, events: list[_Event]) -> bool:
-    """Whether a `$` byte, not escaped by a backslash, lies in the source range
-    of a Text event outside code and front matter."""
-    for ev, _ in _prose(events):
+def _unparsed_dollar(src: bytes, events: list[_Event]) -> int | None:
+    """The position of the first `$` byte, not escaped by a backslash, in the
+    source range of a Text event outside code, front matter, and autolinks."""
+    for ev, stack in _prose(events):
+        if any(s.tag == "Link" and s.attrs["link_type"] in _AUTOLINKS for s in stack):
+            continue
         pos = src.find(b"$", ev.start, ev.end)
         while pos != -1:
             if not _escaped(src, pos):
-                return True
+                return pos
             pos = src.find(b"$", pos + 1, ev.end)
-    return False
+    return None
 
 
 def _protected(src: bytes, events: list[_Event]) -> bytearray:
@@ -227,7 +232,7 @@ def _runs(src: bytes, events: list[_Event]) -> list[_Run]:
             or (ev.start - run.end == 1 and src[run.end] == _BACKSLASH)
         )
         if not joins:
-            run = _Run(first=i, last=i, start=ev.start, end=ev.end)
+            run = _Run(first=i, last=i, end=ev.end)
             runs.append(run)
         run.last, run.end = i, ev.end
 
@@ -332,11 +337,46 @@ def _only_spaces_removed(before: bytes, after: bytes) -> bool:
     return j == len(after)
 
 
+def _text_blocks(events: list[_Event]) -> list[tuple[int, int, int]]:
+    """For each Text event outside code and front matter, its start and the
+    source range of its innermost block.
+
+    The innermost block is the innermost open container that is not an inline
+    one (paragraph, heading, list item, table cell, ...).
+    """
+    out = []
+    for ev, stack in _prose(events):
+        block = next((s for s in reversed(stack) if s.tag not in _INLINE), None)
+        if block is not None:
+            out.append((ev.start, block.start, block.end))
+    return out
+
+
+def _accept(src: bytes, shape: list, groups: list[frozenset[int]]) -> set[int]:
+    """The positions of the groups whose deletion keeps `src` at `shape`.
+
+    The groups are tried together. A set of groups that changes the shape is
+    halved until each half keeps it or is a single group, which is then
+    dropped.
+    """
+    accepted: set[int] = set()
+
+    def accept(batch: list[frozenset[int]]) -> None:
+        nonlocal accepted
+        trial = accepted.union(*batch)
+        if _shape(_parse(_delete(src, trial).decode())) == shape:
+            accepted = trial
+        elif len(batch) > 1:
+            accept(batch[: len(batch) // 2])
+            accept(batch[len(batch) // 2 :])
+
+    accept(groups)
+    return accepted
+
+
 def _pass(text: str) -> str:
     src = text.encode()
     events = _parse(text)
-    if _unparsed_dollar(src, events):
-        return text
     mask = _protected(src, events)
 
     positions = set()
@@ -346,34 +386,48 @@ def _pass(text: str) -> str:
     if not groups:
         return text
 
-    # Keep deletions only if the result has the same `_shape`. A set of groups
-    # that changes it is halved until each half keeps the shape or is a single
-    # group, which is then dropped. In `日本 **(a)** 語` both spaces stay:
-    # deleting either one turns the `**` into literal text. After
-    # `_MAX_REJECTIONS` dropped groups, the groups not yet tried are dropped
-    # too.
-    shape = _shape(events)
-    accepted: set[int] = set()
-    rejections = 0
-
-    def accept(batch: list[frozenset[int]]) -> None:
-        nonlocal accepted, rejections
-        if rejections >= _MAX_REJECTIONS:
-            return
-        trial = accepted.union(*batch)
-        if _shape(_parse(_delete(src, trial).decode())) == shape:
-            accepted = trial
-        elif len(batch) > 1:
-            accept(batch[: len(batch) // 2])
-            accept(batch[len(batch) // 2 :])
-        else:
-            rejections += 1
-
-    accept(groups)
-    out = _delete(src, accepted)
+    # Keep deletions only if the result has the same `_shape`. In
+    # `日本 **(a)** 語` both spaces stay: deleting either one turns the `**`
+    # into literal text. The groups of each block are first checked on the
+    # block's own source; the groups kept there are then checked on the whole
+    # document.
+    texts = _text_blocks(events)
+    text_starts = [start for start, _, _ in texts]
+    by_block: dict[tuple[int, int], list[frozenset[int]]] = {}
+    for g in groups:
+        _, start, end = texts[bisect_right(text_starts, min(g)) - 1]
+        by_block.setdefault((start, end), []).append(g)
+    candidates = []
+    for (start, end), inside in by_block.items():
+        block = src[start:end]
+        kept = _accept(
+            block,
+            _shape(_parse(block.decode())),
+            [frozenset(p - start for p in g) for g in inside],
+        )
+        candidates += [g for g in inside if min(g) - start in kept]
+    out = _delete(src, _accept(src, _shape(events), sorted(candidates, key=min)))
     if not _only_spaces_removed(src, out):
         raise RuntimeError("an edit removed something other than a space")
     return out.decode()
+
+
+def _format_text(text: str) -> tuple[str, int | None]:
+    """`format_text`, and the line of the `$` that left `text` unchanged.
+
+    Lines are counted at LF.
+    """
+    bom = _BOM if text.startswith(_BOM) else ""
+    text = text.removeprefix(bom)
+    src = text.encode()
+    dollar = _unparsed_dollar(src, _parse(text))
+    if dollar is not None:
+        return bom + text, src.count(b"\n", 0, dollar) + 1
+    while True:
+        out = _pass(text)
+        if out == text:
+            return bom + out, None
+        text = out
 
 
 def format_text(text: str) -> str:
@@ -382,14 +436,8 @@ def format_text(text: str) -> str:
     The result is `text` with some U+0020 characters deleted, and pulldown-cmark
     parses it to the same `_shape`. A `text` whose prose holds a `$` not
     escaped by a backslash (see `_unparsed_dollar`) is returned unchanged. A
-    leading BOM is set aside
-    while parsing, so front matter after it is recognised. Passes repeat until
-    one changes nothing, so `format_text` of the result returns it unchanged.
+    leading BOM is set aside while parsing, so front matter after it is
+    recognised. Passes repeat until one changes nothing, so `format_text` of
+    the result returns it unchanged.
     """
-    bom = _BOM if text.startswith(_BOM) else ""
-    text = text.removeprefix(bom)
-    while True:
-        out = _pass(text)
-        if out == text:
-            return bom + out
-        text = out
+    return _format_text(text)[0]

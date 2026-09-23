@@ -21,7 +21,7 @@ spaces around `**(a)**` next to CJK stay. Code, math, front matter, and bare
 URLs keep their spaces.
 
 A space at the edge of the prose folds into an adjacent code span, math, link,
-image, strikethrough, or `*` emphasis (`日本語 **English** テスト` ->
+image, `~~` strikethrough, or `*` emphasis (`日本語 **English** テスト` ->
 `日本語**English**テスト`). It does not fold into `_` emphasis; use `*` for
 emphasis around CJK.
 
@@ -33,8 +33,9 @@ math, and `---` YAML / `+++` TOML front matter. Markdown dialects such as
 Slidev or Obsidian are not modelled; where a dialect reads a construct
 differently, the edits follow pulldown-cmark's reading.
 
-If a `$` in the prose is neither math nor escaped as `\$` (for example
-`$5`), the file is left unchanged. Write a literal dollar sign as `\$`.
+If a `$` in the prose, outside `<…>` autolinks, is neither math nor escaped as
+`\$` (for example `$5`), the file is left unchanged and the CLI prints a warning naming the line.
+Write a literal dollar sign as `\$`.
 
 [`mdformat-no-cjk-latin-space`](../mdformat-no-cjk-latin-space) is the mdformat
 plugin for repositories that format their Markdown with mdformat, which

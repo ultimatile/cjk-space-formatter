@@ -9,7 +9,7 @@ import sys
 from importlib import metadata
 from pathlib import Path
 
-from . import format_text
+from . import _format_text
 
 
 def main() -> int:
@@ -114,10 +114,16 @@ def _decode(name: str, data: bytes) -> str | None:
 
 def _format(name: str, text: str) -> str | None:
     try:
-        return format_text(text)
+        formatted, dollar_line = _format_text(text)
     except RuntimeError as exc:
         print(f"error: {name}: {exc}", file=sys.stderr)
         return None
+    if dollar_line is not None:
+        print(
+            f"warning: {name}: left unchanged: unescaped '$' on line {dollar_line}",
+            file=sys.stderr,
+        )
+    return formatted
 
 
 def _print_diff(name: str, old: str, new: str) -> None:

@@ -187,9 +187,19 @@ FOLDED = [
         id="double-dollar-in-indented-code",
     ),
     pytest.param(
-        "﻿---\ntitle: 日本 語\n---\n\n日本 English\n",
-        "﻿---\ntitle: 日本 語\n---\n\n日本English\n",
+        "\ufeff---\ntitle: 日本 語\n---\n\n日本 English\n",
+        "\ufeff---\ntitle: 日本 語\n---\n\n日本English\n",
         id="front-matter-after-bom",
+    ),
+    pytest.param(
+        "日本 <https://a.com/$x> 語\n\n日本 English\n",
+        "日本<https://a.com/$x>語\n\n日本English\n",
+        id="dollar-in-autolink",
+    ),
+    pytest.param(
+        "日本 <a$b@x.com> 語\n\n日本 English\n",
+        "日本<a$b@x.com>語\n\n日本English\n",
+        id="dollar-in-email-autolink",
     ),
 ]
 
@@ -207,10 +217,10 @@ KEPT = [
     pytest.param("> Plain English text\n", id="blockquote-latin-only"),
     pytest.param("日本語 _English_ テスト\n", id="underscore-em"),
     pytest.param("日本語 __English__ テスト\n", id="underscore-strong"),
+    pytest.param("日本 ~English~ テスト\n", id="single-tilde-strikethrough"),
     pytest.param("日本 **(a)** 語\n", id="structure-check-keeps-all"),
     pytest.param("日本 <b>x</b> 語\n", id="inline-html"),
     pytest.param("<div>\n日本 語\n</div>\n", id="html-block"),
-    pytest.param("日本 <https://a.com/$x> 語\n", id="dollar-in-autolink-text"),
     pytest.param("[日本 a]\n\n[日本 a]: /u\n", id="shortcut-reference-label"),
     pytest.param("[日本 a][]\n\n[日本 a]: /u\n", id="collapsed-reference-label"),
     pytest.param(
@@ -365,7 +375,7 @@ def test_pass_raises_if_a_deletion_removes_a_non_space(monkeypatch):
 def test_deletions_raises_on_a_non_space_candidate():
     raw = "日 a".encode()
     # The space's span points at the bytes of "日".
-    run = _Run(first=0, last=0, start=0, end=len(raw))
+    run = _Run(first=0, last=0, end=len(raw))
     run.chars = ["日", " ", "a"]
     run.spans = [(0, 3), (0, 3), (4, 5)]
     with pytest.raises(RuntimeError, match="is not a space"):
@@ -383,37 +393,44 @@ def test_runs_raises_on_overlapping_text():
         _runs(b"abcdef", events)
 
 
-def test_rejected_group_costs_logarithmic_parses(monkeypatch):
-    """The shape-breaking groups among thousands are isolated by halving."""
-    calls = 0
+@pytest.mark.parametrize("paragraphs", [1, 400], ids=["one", "many"])
+def test_rejected_groups_cost_parses_of_their_block(monkeypatch, paragraphs):
+    """Rejected groups are isolated by re-parsing their block, not the document.
+
+    Each `**「重要」**` paragraph holds two rejected groups; every other
+    deletion, including the last one, is still made.
+    """
+    parsed = 0
     parse = markdown_cjk_latin_space_remover._parse
 
     def counting_parse(text):
-        nonlocal calls
-        calls += 1
+        nonlocal parsed
+        parsed += len(text)
         return parse(text)
 
     monkeypatch.setattr(markdown_cjk_latin_space_remover, "_parse", counting_parse)
-    body = "".join(f"段落 {i} の English テスト です。\n\n" for i in range(800))
-    out = format_text("日本 **(a)** 語\n\n" + body)
-    assert out.startswith("日本 **(a)** 語\n\n段落0のEnglishテストです。")
-    assert calls < 100
+    src = "これは **「重要」** な English です。\n\n" * paragraphs + "日本 English\n"
+    expected = "これは **「重要」** なEnglishです。\n\n" * paragraphs + "日本English\n"
+    assert format_text(src) == expected
+    assert parsed < 20 * len(src)
 
 
-@pytest.mark.parametrize(
-    ("rejections", "tail"),
-    [(-2, "日本English\n"), (0, "日本 English\n")],
-    ids=["below-cap", "at-cap"],
-)
-def test_rejections_are_capped(rejections, tail):
-    """After `_MAX_REJECTIONS` rejected groups, the groups not yet tried stay.
+def test_whole_document_check_drops_what_blocks_accepted(monkeypatch):
+    """Groups a block keeps on its own are checked again on the whole document.
 
-    Each `日本 **(a)** 語` paragraph holds two groups, both rejected; the
-    `日本 English` group comes last.
+    The stand-in makes every block keep all its groups, so only the
+    whole-document check can reject the spaces around `**(a)**`.
     """
-    cap = markdown_cjk_latin_space_remover._MAX_REJECTIONS
-    head = "日本 **(a)** 語\n\n" * ((cap + rejections) // 2)
-    assert format_text(head + "日本 English\n") == head + tail
+    src = "日本 **(a)** 語\n\n日本 English\n"
+    accept = markdown_cjk_latin_space_remover._accept
+
+    def lenient_accept(source, shape, groups):
+        if b"\n\n" not in source:  # a single paragraph
+            return set().union(*groups)
+        return accept(source, shape, groups)
+
+    monkeypatch.setattr(markdown_cjk_latin_space_remover, "_accept", lenient_accept)
+    assert format_text(src) == "日本 **(a)** 語\n\n日本English\n"
 
 
 def test_trailing_fold_does_not_reach_past_a_newline():
@@ -602,6 +619,27 @@ def test_cli_in_place_writes_nothing_if_any_file_is_invalid(tmp_path):
     assert changed.read_bytes() == CRLF_SRC
 
 
+def test_cli_warns_about_an_unescaped_dollar(tmp_path):
+    src = "日本 English\n\n価格は $5 です\n".encode()
+    path = md_file(tmp_path, src)
+    result = run_cli("--check", str(path))
+    assert result.returncode == 0
+    assert result.stderr.decode() == (
+        f"warning: {path}: left unchanged: unescaped '$' on line 3\n"
+    )
+    result = run_cli(stdin=src)
+    assert result.stdout == src
+    assert (
+        result.stderr == b"warning: <stdin>: left unchanged: unescaped '$' on line 3\n"
+    )
+
+
+def test_cli_is_silent_about_an_escaped_dollar():
+    result = run_cli(stdin="価格は \\$5 です\n".encode())
+    assert result.stdout == "価格は\\$5です\n".encode()
+    assert result.stderr == b""
+
+
 def test_cli_invalid_utf8(tmp_path):
     path = md_file(tmp_path, b"\xff\xfe")
     assert run_cli(str(path)).returncode == 2
@@ -613,7 +651,7 @@ def test_cli_reports_an_internal_check_failure(monkeypatch, tmp_path, capsys):
         raise RuntimeError("an edit removed something other than a space")
 
     monkeypatch.setattr(
-        markdown_cjk_latin_space_remover.__main__, "format_text", failing_format_text
+        markdown_cjk_latin_space_remover.__main__, "_format_text", failing_format_text
     )
     path = md_file(tmp_path, CRLF_SRC)
     monkeypatch.setattr(
@@ -628,7 +666,7 @@ def test_cli_reports_an_internal_check_failure_on_stdin(monkeypatch, capsys):
         raise RuntimeError("an edit removed something other than a space")
 
     monkeypatch.setattr(
-        markdown_cjk_latin_space_remover.__main__, "format_text", failing_format_text
+        markdown_cjk_latin_space_remover.__main__, "_format_text", failing_format_text
     )
     monkeypatch.setattr(sys, "argv", ["markdown-cjk-latin-space-remover", "--check"])
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(CRLF_SRC)))
