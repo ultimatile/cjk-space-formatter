@@ -59,11 +59,7 @@ From Python, `format_text(text)` returns the formatted string.
 - A CJK word *inside* emphasis or a link keeps the spaces around it:
   `Foo **設定** bar` is unchanged
   ([#9](https://github.com/ultimatile/cjk-space-formatter/issues/9)).
-- If a `$` or `$$` in the prose is not parsed as math, the block around it, or
-  the text from that `$$` to the next one (or to the end of the file), may be
-  left unedited.
 - Headings are edited like other prose; links to their generated anchors
   (`[…](#見出し-です)`) are not.
-- A top-level `---` line that follows a blank line and is directly followed by
-  text starts front matter if a `---` or `...` line comes later; the text
-  between is not edited.
+- Text between two top-level `---` lines may be parsed as front matter and left
+  unedited.

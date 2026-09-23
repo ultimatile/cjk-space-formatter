@@ -38,12 +38,14 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    # stdin mode when no files given and stdin is piped
+    # stdin mode when no files are given and stdin is not a terminal
     if not args.files and not sys.stdin.isatty():
         text = _decode("<stdin>", sys.stdin.buffer.read())
         if text is None:
             return 2
-        formatted = format_text(text)
+        formatted = _format("<stdin>", text)
+        if formatted is None:
+            return 2
         if args.check:
             return 1 if text != formatted else 0
         if args.diff:
@@ -55,21 +57,30 @@ def main() -> int:
     if not args.files:
         parser.error("no files specified (pipe to stdin or pass file paths)")
 
-    # Every file is read and decoded before any is written.
-    contents = []
+    # Every file is read, decoded, and formatted before any is written.
+    results = []
     for path in args.files:
-        if not path.is_file():
-            reason = "is not a file" if path.exists() else "not found"
-            print(f"error: {path} {reason}", file=sys.stderr)
+        if not path.exists():
+            print(f"error: {path} not found", file=sys.stderr)
             return 2
-        content = _decode(str(path), path.read_bytes())
+        if path.is_dir():
+            print(f"error: {path} is a directory", file=sys.stderr)
+            return 2
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            print(f"error: {path}: {exc.strerror}", file=sys.stderr)
+            return 2
+        content = _decode(str(path), data)
         if content is None:
             return 2
-        contents.append((path, content))
+        formatted = _format(str(path), content)
+        if formatted is None:
+            return 2
+        results.append((path, content, formatted))
 
     any_changed = False
-    for path, content in contents:
-        formatted = format_text(content)
+    for path, content, formatted in results:
         changed = content != formatted
 
         any_changed |= changed
@@ -81,7 +92,11 @@ def main() -> int:
                 _print_diff(str(path), content, formatted)
         elif args.in_place:
             if changed:
-                path.write_bytes(formatted.encode())
+                try:
+                    path.write_bytes(formatted.encode())
+                except OSError as exc:
+                    print(f"error: {path}: {exc.strerror}", file=sys.stderr)
+                    return 2
                 print(f"reformatted {path}")
         else:  # a filter: the output is the whole file, changed or not
             sys.stdout.buffer.write(formatted.encode())
@@ -97,16 +112,33 @@ def _decode(name: str, data: bytes) -> str | None:
         return None
 
 
+def _format(name: str, text: str) -> str | None:
+    try:
+        return format_text(text)
+    except RuntimeError as exc:
+        print(f"error: {name}: {exc}", file=sys.stderr)
+        return None
+
+
 def _print_diff(name: str, old: str, new: str) -> None:
     import difflib
 
     diff = difflib.unified_diff(
-        old.splitlines(keepends=True),
-        new.splitlines(keepends=True),
+        _lines(old),
+        _lines(new),
         fromfile=f"a/{name}",
         tofile=f"b/{name}",
     )
-    sys.stdout.buffer.write("".join(diff).encode())
+    for line in diff:
+        if not line.endswith("\n"):
+            line += "\n\\ No newline at end of file\n"
+        sys.stdout.buffer.write(line.encode())
+
+
+def _lines(text: str) -> list[str]:
+    """Split at `\\n` only, keeping it; the last line may lack one."""
+    lines = text.split("\n")
+    return [line + "\n" for line in lines[:-1]] + ([lines[-1]] if lines[-1] else [])
 
 
 if __name__ == "__main__":

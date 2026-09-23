@@ -6,6 +6,8 @@ carry the same label in typst-cjk-latin-space-remover's suite and in
 mdformat-no-cjk-latin-space's; keep the three in lockstep.
 """
 
+import io
+import os
 import subprocess
 import sys
 
@@ -13,15 +15,16 @@ import pyromark
 import pytest
 
 import markdown_cjk_latin_space_remover
+import markdown_cjk_latin_space_remover.__main__
 from markdown_cjk_latin_space_remover import (
     _TRAIL_CJK,
     _deletions,
     _Event,
     _parse,
     _pass,
+    _require_sorted_disjoint,
     _Run,
     _runs,
-    _start_of,
     format_text,
 )
 from markdown_cjk_latin_space_remover.__main__ import main
@@ -125,6 +128,11 @@ FOLDED = [
         id="double-dollar-in-code",
     ),
     pytest.param(
+        "日本 [a](x$$y) 語\n\n日本 English\n",
+        "日本[a](x$$y) 語\n\n日本 English\n",
+        id="double-dollar-in-link-destination",
+    ),
+    pytest.param(
         '+++\ntitle = "日本 語"\n+++\n\n日本 English\n',
         '+++\ntitle = "日本 語"\n+++\n\n日本English\n',
         id="toml-front-matter",
@@ -209,12 +217,17 @@ KEPT = [
     ),
     pytest.param("詳細は https://example.com を参照\n", id="bare-url"),
     pytest.param("詳細は www.example.com を参照\n", id="bare-www"),
+    pytest.param("詳細は HTTPS://EXAMPLE.COM を参照\n", id="bare-url-uppercase"),
+    pytest.param("詳細は WWW.EXAMPLE.COM を参照\n", id="bare-www-uppercase"),
     pytest.param("連絡は foo@bar.example.com まで\n", id="bare-email"),
     pytest.param("連絡は mailto:foo@bar.example.com まで\n", id="bare-mailto"),
     pytest.param("連絡は xmpp:foo@bar.example.com まで\n", id="bare-xmpp"),
     pytest.param("https://example.com/*日本 語*\n", id="bare-url-into-emphasis"),
     pytest.param("https://example.com/日本 *x*\n", id="bare-url-before-emphasis"),
     pytest.param("詳細は https://ex.com/$x$ を参照\n", id="bare-url-containing-math"),
+    pytest.param("[x](https://a.com/)https://b.com 日本\n", id="bare-url-after-link"),
+    pytest.param("`https://a.com/`https://b.com 日本\n", id="bare-url-after-code-span"),
+    pytest.param("<https://a.com/>https://b.com 日本\n", id="bare-url-after-autolink"),
     pytest.param("前 $ \\text{日本 語} $ 後\n", id="spaced-inline-math"),
     pytest.param("価格 \\\\$5 です\n", id="escaped-backslash-then-dollar"),
     pytest.param("$5\n\n$ \\text{日本 語} $\n", id="currency-then-spaced-math"),
@@ -364,9 +377,29 @@ def test_runs_raises_on_overlapping_text():
         _runs(b"abcdef", events)
 
 
-def test_start_of_raises_on_an_unbalanced_end():
-    with pytest.raises(RuntimeError, match="unbalanced"):
-        _start_of([_Event("End", "Paragraph", 0, 1)], 0)
+@pytest.mark.parametrize(
+    "spans", [[(0, 5), (3, 8)], [(5, 8), (0, 3)]], ids=["overlapping", "unsorted"]
+)
+def test_span_lists_must_be_sorted_and_disjoint(spans):
+    with pytest.raises(RuntimeError, match="overlap or are unsorted"):
+        _require_sorted_disjoint(spans)
+
+
+def test_rejected_group_costs_logarithmic_parses(monkeypatch):
+    """The shape-breaking groups among thousands are isolated by halving."""
+    calls = 0
+    parse = markdown_cjk_latin_space_remover._parse
+
+    def counting_parse(text):
+        nonlocal calls
+        calls += 1
+        return parse(text)
+
+    monkeypatch.setattr(markdown_cjk_latin_space_remover, "_parse", counting_parse)
+    body = "".join(f"段落 {i} の English テスト です。\n\n" for i in range(800))
+    out = format_text("日本 **(a)** 語\n\n" + body)
+    assert out.startswith("日本 **(a)** 語\n\n段落0のEnglishテストです。")
+    assert calls < 100
 
 
 def test_trailing_fold_does_not_reach_past_a_newline():
@@ -409,11 +442,12 @@ def changed_and_clean(tmp_path):
     )
 
 
-def run_cli(*args, stdin=b""):
+def run_cli(*args, stdin=b"", cwd=None):
     return subprocess.run(
         [sys.executable, "-m", "markdown_cjk_latin_space_remover", *args],
         input=stdin,
         capture_output=True,
+        cwd=cwd,
     )
 
 
@@ -508,7 +542,43 @@ def test_cli_missing_file(tmp_path):
 def test_cli_directory(tmp_path):
     result = run_cli(str(tmp_path))
     assert result.returncode == 2
-    assert b"is not a file" in result.stderr
+    assert b"is a directory" in result.stderr
+
+
+def test_cli_reads_a_pipe_path():
+    result = subprocess.run(
+        f"{sys.executable} -m markdown_cjk_latin_space_remover <(printf '日本 English')",
+        shell=True,
+        executable="/bin/bash",
+        capture_output=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "日本English".encode()
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "日本 English",
+        "日本 English\r日本 English\n",
+        "日本 English\f日本 English\n",
+        "日本 English\u2028日本 English\n",
+    ],
+    ids=["no-final-newline", "lone-cr", "form-feed", "line-separator"],
+)
+def test_cli_diff_applies_with_git(tmp_path, src):
+    path = md_file(tmp_path, src.encode(), "a.md")
+    result = run_cli("--diff", "a.md", cwd=tmp_path)
+    assert result.returncode == 0
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "apply", "-"], input=result.stdout, cwd=tmp_path, check=True)
+    assert path.read_bytes() == format_text(src).encode()
+
+
+def test_cli_ignores_in_place_on_stdin():
+    result = run_cli("-i", stdin=CRLF_SRC)
+    assert result.returncode == 0
+    assert result.stdout == CRLF_OUT
 
 
 def test_cli_in_place_writes_nothing_if_any_file_is_invalid(tmp_path):
@@ -522,6 +592,59 @@ def test_cli_invalid_utf8(tmp_path):
     path = md_file(tmp_path, b"\xff\xfe")
     assert run_cli(str(path)).returncode == 2
     assert run_cli(stdin=b"\xff").returncode == 2
+
+
+def test_cli_reports_an_internal_check_failure(monkeypatch, tmp_path, capsys):
+    def failing_format_text(text):
+        raise RuntimeError("an edit removed something other than a space")
+
+    monkeypatch.setattr(
+        markdown_cjk_latin_space_remover.__main__, "format_text", failing_format_text
+    )
+    path = md_file(tmp_path, CRLF_SRC)
+    monkeypatch.setattr(
+        sys, "argv", ["markdown-cjk-latin-space-remover", "--check", str(path)]
+    )
+    assert main() == 2
+    assert "other than a space" in capsys.readouterr().err
+
+
+def test_cli_reports_an_internal_check_failure_on_stdin(monkeypatch, capsys):
+    def failing_format_text(text):
+        raise RuntimeError("an edit removed something other than a space")
+
+    monkeypatch.setattr(
+        markdown_cjk_latin_space_remover.__main__, "format_text", failing_format_text
+    )
+    monkeypatch.setattr(sys, "argv", ["markdown-cjk-latin-space-remover", "--check"])
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(CRLF_SRC)))
+    assert main() == 2
+    assert "<stdin>" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any file")
+def test_cli_unreadable_file(tmp_path):
+    path = md_file(tmp_path, CRLF_SRC)
+    path.chmod(0)
+    try:
+        result = run_cli("--check", str(path))
+    finally:
+        path.chmod(0o600)
+    assert result.returncode == 2
+    assert b"Permission denied" in result.stderr
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can write any file")
+def test_cli_in_place_on_a_read_only_file(tmp_path):
+    path = md_file(tmp_path, CRLF_SRC)
+    path.chmod(0o444)
+    try:
+        result = run_cli("-i", str(path))
+    finally:
+        path.chmod(0o600)
+    assert result.returncode == 2
+    assert b"Permission denied" in result.stderr
+    assert path.read_bytes() == CRLF_SRC
 
 
 def test_cli_without_files_on_a_terminal(monkeypatch):

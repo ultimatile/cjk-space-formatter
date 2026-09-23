@@ -8,6 +8,7 @@ regions.
 """
 
 import re
+from bisect import bisect_right
 from dataclasses import dataclass, field
 
 import pyromark
@@ -43,8 +44,11 @@ _SPACE = 0x20
 _BACKSLASH = 0x5C
 _ASTERISK = 0x2A
 
-# Leaf events a space at a run's edge folds across.
-_FOLD_LEAVES = frozenset({"Code", "InlineMath", "DisplayMath"})
+# Leaf events whose content is never edited; a space at a run's edge folds
+# across them.
+_OPAQUE_LEAVES = frozenset({"Code", "InlineMath", "DisplayMath"})
+# Containers whose Text is never edited.
+_RAW_BLOCKS = frozenset({"CodeBlock", "MetadataBlock"})
 # Containers a space at a run's edge folds across. Emphasis and strong
 # emphasis fold only when their delimiter is `*`.
 _FOLD_CONTAINERS = frozenset({"Link", "Image", "Strikethrough"})
@@ -155,10 +159,10 @@ def _protected(src: bytes, events: list[_Event]) -> bytearray:
                 opaque.append((ev.start, ev.end))  # front matter, fenced code
         elif ev.kind == "End":
             stack.pop()
-        elif ev.kind in ("Code", "InlineMath", "DisplayMath"):
+        elif ev.kind in _OPAQUE_LEAVES:
             opaque.append((ev.start, ev.end))
         elif ev.kind == "Text" and stack:
-            if any(s.tag in ("CodeBlock", "MetadataBlock") for s in stack):
+            if any(s.tag in _RAW_BLOCKS for s in stack):
                 continue
             if not any(s.tag in _LINKS for s in stack):
                 linkable.append((ev.start, ev.end))
@@ -167,31 +171,51 @@ def _protected(src: bytes, events: list[_Event]) -> bytearray:
                     protect(stack[0].start, stack[0].end)
                     break
 
+    _require_sorted_disjoint(opaque)
     tokens = [
         m.start()
         for m in _DOUBLE_DOLLAR.finditer(src)
-        if not _escaped(src, m.start())
-        and not any(s <= m.start() < e for s, e in opaque)
+        if not _escaped(src, m.start()) and not _inside(opaque, m.start())
     ]
     for i in range(0, len(tokens), 2):
         end = tokens[i + 1] + 2 if i + 1 < len(tokens) else len(src)
         protect(tokens[i], end)
 
-    for m in _BARE_LINK.finditer(src):
-        start, end = m.span()
-        if not any(s <= start < e for s, e in linkable):
-            continue
-        while start > 0 and src[start - 1] == _SPACE:
-            start -= 1
-        while end < len(src) and src[end] == _SPACE:
-            end += 1
-        protect(start, end)
+    for span_start, span_end in linkable:
+        for m in _BARE_LINK.finditer(src, span_start, span_end):
+            _protect_bare_link(src, mask, m.start())
     return mask
+
+
+def _protect_bare_link(src: bytes, mask: bytearray, start: int) -> None:
+    """Protect the bare link that starts at `start`, and the spaces around it.
+
+    The match runs to its full length, past the end of the Text range it
+    starts in.
+    """
+    end = _BARE_LINK.match(src, start).end()
+    while start > 0 and src[start - 1] == _SPACE:
+        start -= 1
+    while end < len(src) and src[end] == _SPACE:
+        end += 1
+    mask[start:end] = b"\x01" * (end - start)
+
+
+def _require_sorted_disjoint(spans: list[tuple[int, int]]) -> None:
+    for (_, end), (start, _) in zip(spans, spans[1:]):
+        if start < end:
+            raise RuntimeError(f"spans overlap or are unsorted at byte {start}")
+
+
+def _inside(spans: list[tuple[int, int]], pos: int) -> bool:
+    """Whether `pos` lies in one of `spans`, which are sorted and disjoint."""
+    i = bisect_right(spans, (pos, float("inf"))) - 1
+    return i >= 0 and pos < spans[i][1]
 
 
 def _hides_text(start: _Event) -> bool:
     """Whether Text inside this container must not be edited."""
-    if start.tag in ("CodeBlock", "MetadataBlock"):
+    if start.tag in _RAW_BLOCKS:
         return True
     return start.tag in _LINKS and start.attrs["link_type"] in _LABEL_IS_KEY
 
@@ -247,13 +271,11 @@ def _runs(src: bytes, events: list[_Event]) -> list[_Run]:
 
 
 def _folds_after(src: bytes, events: list[_Event], run: _Run) -> bool:
-    """Whether a space at the run's end folds into the construct that follows."""
+    """Whether a space at the run's end folds into the next event."""
     if run.last + 1 >= len(events):
         return False
     ev = events[run.last + 1]
-    if ev.start != run.end:
-        return False
-    if ev.kind in _FOLD_LEAVES:
+    if ev.kind in _OPAQUE_LEAVES:
         return True
     if ev.kind != "Start":
         return False
@@ -263,39 +285,17 @@ def _folds_after(src: bytes, events: list[_Event], run: _Run) -> bool:
 
 
 def _folds_before(src: bytes, events: list[_Event], run: _Run) -> bool:
-    """Whether a space at the run's start folds into the construct before it."""
+    """Whether a space at the run's start folds into the previous event."""
     if run.first == 0:
         return False
     ev = events[run.first - 1]
-    if ev.kind in _FOLD_LEAVES:
-        return ev.end == run.start
+    if ev.kind in _OPAQUE_LEAVES:
+        return True
     if ev.kind != "End":
-        return False
-    # A collapsed reference `[x][]` is adjacent across the `[]` after its range.
-    opened = _start_of(events, run.first - 1)
-    gap = run.start - ev.end
-    if gap == 2 and src[ev.end : run.start] == b"[]":
-        adjacent = opened.tag in _LINKS and opened.attrs["link_type"] == "Collapsed"
-    else:
-        adjacent = gap == 0
-    if not adjacent:
         return False
     return ev.tag in _FOLD_CONTAINERS or (
         ev.tag in _EMPHASIS and src[ev.end - 1] == _ASTERISK
     )
-
-
-def _start_of(events: list[_Event], end_index: int) -> _Event:
-    depth = 0
-    for i in range(end_index, -1, -1):
-        kind = events[i].kind
-        if kind == "End":
-            depth += 1
-        elif kind == "Start":
-            depth -= 1
-            if depth == 0:
-                return events[i]
-    raise RuntimeError(f"unbalanced End event at index {end_index}")
 
 
 def _deletions(src: bytes, events: list[_Event], run: _Run) -> set[int]:
@@ -363,19 +363,23 @@ def _pass(text: str) -> str:
     if not groups:
         return text
 
-    # Keep the deletions only if the result has the same `_shape`; otherwise
-    # add groups one at a time, keeping each that preserves it. In
-    # `日本 **(a)** 語` both spaces stay: deleting either one turns the `**`
-    # into literal text.
+    # Keep deletions only if the result has the same `_shape`. A set of groups
+    # that changes it is halved until each half keeps the shape or is a single
+    # group, which is then dropped. In `日本 **(a)** 語` both spaces stay:
+    # deleting either one turns the `**` into literal text.
     shape = _shape(events)
-    accepted = set().union(*groups)
-    if _shape(_parse(_delete(src, accepted).decode())) != shape:
-        accepted = set()
-        for group in groups:
-            trial = accepted | group
-            if _shape(_parse(_delete(src, trial).decode())) == shape:
-                accepted = trial
+    accepted: set[int] = set()
 
+    def accept(batch: list[frozenset[int]]) -> None:
+        nonlocal accepted
+        trial = accepted.union(*batch)
+        if _shape(_parse(_delete(src, trial).decode())) == shape:
+            accepted = trial
+        elif len(batch) > 1:
+            accept(batch[: len(batch) // 2])
+            accept(batch[len(batch) // 2 :])
+
+    accept(groups)
     out = _delete(src, accepted)
     if not _only_spaces_removed(src, out):
         raise RuntimeError("an edit removed something other than a space")
