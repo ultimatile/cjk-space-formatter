@@ -21,13 +21,18 @@ be meaningful.
 
 This repository ships separate packages for Markdown and Typst:
 
-| You edit…    | Use                                                                       | Form            | Status      |
-| ------------ | ------------------------------------------------------------------------- | --------------- | ----------- |
-| **Markdown** | [`mdformat-no-cjk-latin-space`](packages/mdformat-no-cjk-latin-space)     | mdformat plugin | usable      |
-| **Typst**    | [`typst-cjk-latin-space-remover`](packages/typst-cjk-latin-space-remover) | standalone CLI  | provisional |
+| You edit…    | Use                                                                             | Form            | Status      |
+| ------------ | ------------------------------------------------------------------------------- | --------------- | ----------- |
+| **Markdown** | [`markdown-cjk-latin-space-remover`](packages/markdown-cjk-latin-space-remover) | standalone CLI  | usable      |
+| **Markdown** | [`mdformat-no-cjk-latin-space`](packages/mdformat-no-cjk-latin-space)           | mdformat plugin | usable      |
+| **Typst**    | [`typst-cjk-latin-space-remover`](packages/typst-cjk-latin-space-remover)       | standalone CLI  | provisional |
 
-Each package's README has install and usage instructions. Neither is on PyPI;
-both install from this repository.
+For Markdown, the CLI deletes spaces and leaves every other byte unchanged. The
+plugin runs inside mdformat, which re-formats the whole document; it is for
+repositories that already format their Markdown with mdformat.
+
+Each package's README has install and usage instructions. None is on PyPI; all
+install from this repository.
 
 The Typst tool is **provisional**. Its scanner has known limitations documented
 in the package README, and the package remains unreleased.
@@ -35,25 +40,28 @@ in the package README, and the package remains unreleased.
 ## Migrating from `cjk-space-formatter`
 
 The single `cjk-space-formatter` CLI that handled both formats is **deprecated**
-in favour of the two tools above. For Markdown, install the plugin and run
-`mdformat`. For Typst, `typst-cjk-latin-space-remover file.typ` replaces
-`cjk-space-formatter file.typ`, subject to the provisional status above.
+in favour of the tools above. For Markdown, `markdown-cjk-latin-space-remover`
+takes the same `-i` / `--check` / `--diff` flags as `cjk-space-formatter`;
+without a flag it prints every file, including unchanged ones. For Typst,
+`typst-cjk-latin-space-remover file.typ` replaces `cjk-space-formatter file.typ`,
+subject to the provisional status above.
 
 ## Repository layout
 
 ```
 packages/
-  mdformat-no-cjk-latin-space/    # published from here; not on PyPI yet
-  typst-cjk-latin-space-remover/  # provisional, unreleased
-core/                             # cjk-latin-space core: squash(plain_run) — build-time vendored, not published
-conformance/                      # pure-run core corpus, target-independent
+  markdown-cjk-latin-space-remover/  # published from here; not on PyPI yet
+  mdformat-no-cjk-latin-space/       # published from here; not on PyPI yet
+  typst-cjk-latin-space-remover/     # provisional, unreleased
+core/                                # cjk-latin-space core: squash(plain_run) — build-time vendored, not published
+conformance/                         # pure-run core corpus, target-independent
 ```
 
 The shared core holds only the format-independent invariant — collapsing
 CJK<->Latin/digit spaces within a plain run (with the half-width colon as the
 sole exception). Span/boundary protection is each tool's own plumbing. The core
 is vendored into each wheel at build time, so it is never a runtime dependency
-and the two packages release independently.
+and the packages release independently.
 
 ## Alternatives
 
@@ -69,12 +77,13 @@ vs remove) and **target**:
 
 Off-the-shelf textlint rules cannot protect `$...$`: a plain Markdown AST has no
 math concept. These tools solve that by owning the math/span model — the Markdown
-plugin via dollarmath, the Typst CLI via its own scanner.
+CLI via pulldown-cmark's math extension, the Markdown plugin via dollarmath, the
+Typst CLI via its own scanner.
 
 ## Development
 
 ```bash
-uv sync                       # installs both packages + core (editable) and pytest
+uv sync                       # installs every package + core (editable) and pytest
 uv run pytest
 ```
 

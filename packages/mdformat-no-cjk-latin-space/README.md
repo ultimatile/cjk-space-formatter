@@ -67,5 +67,7 @@ mdformat.text(src, extensions={"no_cjk_latin_space", "gfm", "tables"})
   the plugin sees the text, so the plugin no-ops (it does not corrupt — it simply
   makes no change). Keep the default `wrap` to use this plugin.
 - mdformat **re-formats the whole document**, not only the spaces this plugin
-  targets. If you need surgical edits, this is not the right tool.
+  targets. If you need surgical edits, this is not the right tool: use
+  [`markdown-cjk-latin-space-remover`](../markdown-cjk-latin-space-remover),
+  which deletes the spaces and changes nothing else.
 - Pathological inputs are out of scope; the parser's span model is the contract.

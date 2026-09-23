@@ -1,8 +1,9 @@
 """End-to-end tests: drive the plugin through mdformat as a user would.
 
-Covers protected-span and boundary behaviour specific to the Markdown front-end.
-The CJK-boundary cases marked `# MIRROR` have a paired Typst case in
-typst-cjk-latin-space-remover's suite; keep the two in lockstep.
+Covers protected-span and boundary behaviour specific to the mdformat plugin.
+The CJK-boundary cases marked `# MIRROR` carry the same label in
+typst-cjk-latin-space-remover's suite and markdown-cjk-latin-space-remover's;
+keep the three in lockstep.
 """
 
 import mdformat
@@ -33,7 +34,7 @@ def render_gfm(md: str) -> str:
     return parser.use(tasklists_plugin).use(gfm_autolink_plugin).render(md)
 
 
-def test_fold_across_code_inline():  # MIRROR: inline raw
+def test_fold_across_code_inline():  # MIRROR: inline raw boundary
     assert fmt("これは `code` です\n") == "これは`code`です\n"
 
 

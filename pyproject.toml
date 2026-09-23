@@ -1,13 +1,14 @@
 # uv workspace root (virtual — not itself a package).
 #
-# Layout rationale: the intended published surface is two packages, not two
-# repos. They share a core, so a monorepo keeps a single source of truth and
+# Layout rationale: the intended published surface is separate packages, not
+# separate repos. They share a core, so a monorepo keeps a single source of truth and
 # atomic changes; independent release cycles stay possible per package.
 #
-#   packages/mdformat-no-cjk-latin-space/   # usable; not on PyPI yet
-#   packages/typst-cjk-latin-space-remover/ # provisional, unreleased
-#   core/                                   # cjk-latin-space core (build-time vendored, not published)
-#   conformance/                            # pure-run core corpus (target-independent)
+#   packages/mdformat-no-cjk-latin-space/       # usable; not on PyPI yet
+#   packages/markdown-cjk-latin-space-remover/  # usable; not on PyPI yet
+#   packages/typst-cjk-latin-space-remover/     # provisional, unreleased
+#   core/                                       # cjk-latin-space core (build-time vendored, not published)
+#   conformance/                                # pure-run core corpus (target-independent)
 
 [tool.uv.workspace]
 members = ["packages/*", "core"]
@@ -17,10 +18,12 @@ dev = [
     "pytest>=8.0",
     "cjk-latin-space",
     "mdformat-no-cjk-latin-space",
+    "markdown-cjk-latin-space-remover",
     "typst-cjk-latin-space-remover",
 ]
 
 [tool.uv.sources]
 cjk-latin-space = { workspace = true }
 mdformat-no-cjk-latin-space = { workspace = true }
+markdown-cjk-latin-space-remover = { workspace = true }
 typst-cjk-latin-space-remover = { workspace = true }
