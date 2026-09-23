@@ -15,30 +15,30 @@ Latin text.
 ## Only the spaces change
 
 The output is the input with some spaces deleted. Every other byte is
-unchanged, including line endings, HTML, Vue components, and
-[Slidev](https://sli.dev/)'s per-slide front matter.
-
-[`mdformat-no-cjk-latin-space`](../mdformat-no-cjk-latin-space) is the mdformat
-plugin for repositories that format their Markdown with mdformat, which
-re-formats the whole document.
-
-## Protected spans
-
-These keep every space they contain:
-
-- code spans, fenced and indented code, and inline / display math
-- front matter (`---` YAML and `+++` TOML blocks, also mid-document)
-- bare URLs and email addresses in prose outside links, together with the
-  spaces on either side
-- the label of a `[label]` or `[label][]` reference link or image
+unchanged, including line endings and HTML. A deletion is kept only if
+pulldown-cmark parses the result to the same structure; for example, the
+spaces around `**(a)**` next to CJK stay. Code, math, front matter, and bare
+URLs keep their spaces.
 
 A space at the edge of the prose folds into an adjacent code span, math, link,
 image, strikethrough, or `*` emphasis (`日本語 **English** テスト` ->
 `日本語**English**テスト`). It does not fold into `_` emphasis; use `*` for
 emphasis around CJK.
 
-A deletion is kept only if pulldown-cmark parses the result to the same
-structure. For example, the spaces around `**(a)**` next to CJK stay.
+## Which Markdown it reads
+
+Files are read the way [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark)
+reads them: CommonMark with tables, strikethrough, task lists, `$` / `$$`
+math, and `---` YAML / `+++` TOML front matter. Markdown dialects such as
+Slidev or Obsidian are not modelled; where a dialect reads a construct
+differently, the edits follow pulldown-cmark's reading.
+
+If a `$` in the prose is neither math nor escaped as `\$` (for example
+`$5`), the file is left unchanged. Write a literal dollar sign as `\$`.
+
+[`mdformat-no-cjk-latin-space`](../mdformat-no-cjk-latin-space) is the mdformat
+plugin for repositories that format their Markdown with mdformat, which
+re-formats the whole document.
 
 ## Install & use
 

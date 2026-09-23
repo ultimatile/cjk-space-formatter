@@ -22,7 +22,6 @@ from markdown_cjk_latin_space_remover import (
     _Event,
     _parse,
     _pass,
-    _require_sorted_disjoint,
     _Run,
     _runs,
     format_text,
@@ -104,33 +103,14 @@ FOLDED = [
         id="link-destination-is-not-a-bare-url",
     ),
     pytest.param("価格は \\$5 です\n", "価格は\\$5です\n", id="escaped-dollar"),
-    pytest.param(
-        "$$\n\n    $$\n\n日本 English\n",
-        "$$\n\n    $$\n\n日本English\n",
-        id="double-dollar-in-indented-code-pairs",
-    ),
+    pytest.param("価格は &#36;5 です\n", "価格は&#36;5です\n", id="dollar-as-entity"),
     pytest.param(
         "値 \\\\$x$ です\n", "値\\\\$x$です\n", id="escaped-backslash-then-math"
-    ),
-    pytest.param(
-        "価格は $5 です\n\n日本 English\n",
-        "価格は $5 です\n\n日本English\n",
-        id="stray-dollar-protects-its-block-only",
-    ),
-    pytest.param(
-        "日本 English\n\n$$\n\n日本 English\n",
-        "日本English\n\n$$\n\n日本 English\n",
-        id="unpaired-double-dollar-protects-to-end",
     ),
     pytest.param(
         "記法 `$$` と 日本 English\n",
         "記法`$$`と日本English\n",
         id="double-dollar-in-code",
-    ),
-    pytest.param(
-        "日本 [a](x$$y) 語\n\n日本 English\n",
-        "日本[a](x$$y) 語\n\n日本 English\n",
-        id="double-dollar-in-link-destination",
     ),
     pytest.param(
         '+++\ntitle = "日本 語"\n+++\n\n日本 English\n',
@@ -141,11 +121,6 @@ FOLDED = [
         "---\na: $$\n---\n\n日本 English\n",
         "---\na: $$\n---\n\n日本English\n",
         id="double-dollar-in-front-matter",
-    ),
-    pytest.param(
-        "記号 \\$$ と\n\n日本 English\n",
-        "記号 \\$$ と\n\n日本English\n",
-        id="escaped-double-dollar",
     ),
     pytest.param("日本 $$x$$ 語\n", "日本$$x$$語\n", id="inline-display-math"),
     pytest.param(
@@ -188,6 +163,34 @@ FOLDED = [
         "日本 **(a)** 語とEnglish\n",
         id="structure-check-keeps-some",
     ),
+    pytest.param(
+        "式 $\\text{日本 語}$ と\n", "式$\\text{日本 語}$と\n", id="math-interior-kept"
+    ),
+    pytest.param(
+        "記号 * 日本語* と *強調*です\n",
+        "記号* 日本語*と *強調*です\n",
+        id="structure-check-keeps-emphasis-content",
+    ),
+    pytest.param(
+        "日本 [a](x$$y) 語\n\n日本 English\n",
+        "日本[a](x$$y)語\n\n日本English\n",
+        id="double-dollar-in-link-destination",
+    ),
+    pytest.param(
+        '<div title="$$"></div>\n\n日本 English\n',
+        '<div title="$$"></div>\n\n日本English\n',
+        id="double-dollar-in-html",
+    ),
+    pytest.param(
+        "    $$\n\n日本 English\n",
+        "    $$\n\n日本English\n",
+        id="double-dollar-in-indented-code",
+    ),
+    pytest.param(
+        "﻿---\ntitle: 日本 語\n---\n\n日本 English\n",
+        "﻿---\ntitle: 日本 語\n---\n\n日本English\n",
+        id="front-matter-after-bom",
+    ),
 ]
 
 # Inputs that must come back unchanged.
@@ -206,6 +209,7 @@ KEPT = [
     pytest.param("日本語 __English__ テスト\n", id="underscore-strong"),
     pytest.param("日本 **(a)** 語\n", id="structure-check-keeps-all"),
     pytest.param("日本 <b>x</b> 語\n", id="inline-html"),
+    pytest.param("<div>\n日本 語\n</div>\n", id="html-block"),
     pytest.param("日本 <https://a.com/$x> 語\n", id="dollar-in-autolink-text"),
     pytest.param("[日本 a]\n\n[日本 a]: /u\n", id="shortcut-reference-label"),
     pytest.param("[日本 a][]\n\n[日本 a]: /u\n", id="collapsed-reference-label"),
@@ -249,9 +253,11 @@ KEPT = [
         "$$\n\n日本 語\n\n    $$\n", id="display-math-closed-by-indented-code"
     ),
     pytest.param("$$\n\n日本 語\n\n<!-- $$ -->\n", id="display-math-closed-in-html"),
-    pytest.param(
-        '<div title="$$"></div>\n\n日本 English\n', id="unpaired-double-dollar-in-html"
-    ),
+    # An unescaped `$` left in prose leaves the whole file unchanged.
+    pytest.param("価格は $5 です\n\n日本 English\n", id="stray-dollar"),
+    pytest.param("日本 English\n\n$$\n\n日本 English\n", id="unpaired-double-dollar"),
+    pytest.param("$$\n\n    $$\n\n日本 English\n", id="double-dollar-then-indented"),
+    pytest.param("記号 \\$$ と\n\n日本 English\n", id="escaped-then-bare-dollar"),
     pytest.param("", id="empty"),
 ]
 
@@ -377,14 +383,6 @@ def test_runs_raises_on_overlapping_text():
         _runs(b"abcdef", events)
 
 
-@pytest.mark.parametrize(
-    "spans", [[(0, 5), (3, 8)], [(5, 8), (0, 3)]], ids=["overlapping", "unsorted"]
-)
-def test_span_lists_must_be_sorted_and_disjoint(spans):
-    with pytest.raises(RuntimeError, match="overlap or are unsorted"):
-        _require_sorted_disjoint(spans)
-
-
 def test_rejected_group_costs_logarithmic_parses(monkeypatch):
     """The shape-breaking groups among thousands are isolated by halving."""
     calls = 0
@@ -400,6 +398,22 @@ def test_rejected_group_costs_logarithmic_parses(monkeypatch):
     out = format_text("日本 **(a)** 語\n\n" + body)
     assert out.startswith("日本 **(a)** 語\n\n段落0のEnglishテストです。")
     assert calls < 100
+
+
+@pytest.mark.parametrize(
+    ("rejections", "tail"),
+    [(-2, "日本English\n"), (0, "日本 English\n")],
+    ids=["below-cap", "at-cap"],
+)
+def test_rejections_are_capped(rejections, tail):
+    """After `_MAX_REJECTIONS` rejected groups, the groups not yet tried stay.
+
+    Each `日本 **(a)** 語` paragraph holds two groups, both rejected; the
+    `日本 English` group comes last.
+    """
+    cap = markdown_cjk_latin_space_remover._MAX_REJECTIONS
+    head = "日本 **(a)** 語\n\n" * ((cap + rejections) // 2)
+    assert format_text(head + "日本 English\n") == head + tail
 
 
 def test_trailing_fold_does_not_reach_past_a_newline():

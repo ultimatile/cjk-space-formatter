@@ -8,7 +8,6 @@ regions.
 """
 
 import re
-from bisect import bisect_right
 from dataclasses import dataclass, field
 
 import pyromark
@@ -38,7 +37,9 @@ _BARE_LINK = re.compile(
     rb"(?:https?://|www\.)[^\s<]+|(?:(?:mailto|xmpp):)?[\w.+-]+@[\w-]+(?:\.[\w-]+)+",
     re.IGNORECASE,
 )
-_DOUBLE_DOLLAR = re.compile(rb"\$\$")
+
+_BOM = "﻿"
+_MAX_REJECTIONS = 32
 
 _SPACE = 0x20
 _BACKSLASH = 0x5C
@@ -107,17 +108,21 @@ def _parse(text: str) -> list[_Event]:
 
 
 def _shape(events: list[_Event]) -> list:
-    """The event stream with prose reduced to a marker.
+    """The event stream with the spaces taken out of its prose.
 
     Every non-Text event is kept with its full value (link destinations, code
     and math content, heading levels, table alignment); each stretch of
-    consecutive Text events becomes one `"Text"` marker.
+    consecutive Text events becomes one `("Text", content)` entry, with U+0020
+    removed from the content.
     """
     shape = []
     for ev in events:
         if ev.kind == "Text":
-            if not shape or shape[-1] != "Text":
-                shape.append("Text")
+            content = ev.value.replace(" ", "")
+            if shape and shape[-1][0] == "Text":
+                shape[-1] = ("Text", shape[-1][1] + content)
+            else:
+                shape.append(("Text", content))
         else:
             shape.append((ev.kind, ev.value))
     return shape
@@ -130,59 +135,41 @@ def _escaped(src: bytes, pos: int) -> bool:
     return n % 2 == 1
 
 
-def _protected(src: bytes, events: list[_Event]) -> bytearray:
-    """Mark the bytes no edit may touch.
-
-    - A top-level block with a `$` byte, not escaped by a backslash, inside
-      the source range of one of its Text events (outside code and front
-      matter).
-    - From an unescaped `$$` outside math, fenced code, code spans, and front
-      matter to the next such `$$`, pairing them in order; an unpaired last one
-      protects to the end.
-    - A bare URL or email that starts in Text outside links and images,
-      extended over the spaces on both sides.
-    """
-    mask = bytearray(len(src) + 1)
-
-    def protect(start: int, end: int) -> None:
-        mask[start:end] = b"\x01" * (end - start)
-
-    opaque = []  # spans whose `$$` are not counted
-    linkable = []  # Text ranges outside links, where bare links are matched
+def _prose(events: list[_Event]):
+    """Yield each Text event outside code and front matter, with the open containers."""
     stack: list[_Event] = []
     for ev in events:
         if ev.kind == "Start":
             stack.append(ev)
-            if ev.tag == "MetadataBlock" or (
-                ev.tag == "CodeBlock" and isinstance(ev.attrs, dict)
-            ):
-                opaque.append((ev.start, ev.end))  # front matter, fenced code
         elif ev.kind == "End":
             stack.pop()
-        elif ev.kind in _OPAQUE_LEAVES:
-            opaque.append((ev.start, ev.end))
-        elif ev.kind == "Text" and stack:
-            if any(s.tag in _RAW_BLOCKS for s in stack):
-                continue
-            if not any(s.tag in _LINKS for s in stack):
-                linkable.append((ev.start, ev.end))
-            for pos in range(ev.start, ev.end):
-                if src[pos] == ord("$") and not _escaped(src, pos):
-                    protect(stack[0].start, stack[0].end)
-                    break
+        elif ev.kind == "Text" and not any(s.tag in _RAW_BLOCKS for s in stack):
+            yield ev, stack
 
-    _require_sorted_disjoint(opaque)
-    tokens = [
-        m.start()
-        for m in _DOUBLE_DOLLAR.finditer(src)
-        if not _escaped(src, m.start()) and not _inside(opaque, m.start())
-    ]
-    for i in range(0, len(tokens), 2):
-        end = tokens[i + 1] + 2 if i + 1 < len(tokens) else len(src)
-        protect(tokens[i], end)
 
-    for span_start, span_end in linkable:
-        for m in _BARE_LINK.finditer(src, span_start, span_end):
+def _unparsed_dollar(src: bytes, events: list[_Event]) -> bool:
+    """Whether a `$` byte, not escaped by a backslash, lies in the source range
+    of a Text event outside code and front matter."""
+    for ev, _ in _prose(events):
+        pos = src.find(b"$", ev.start, ev.end)
+        while pos != -1:
+            if not _escaped(src, pos):
+                return True
+            pos = src.find(b"$", pos + 1, ev.end)
+    return False
+
+
+def _protected(src: bytes, events: list[_Event]) -> bytearray:
+    """Mark the bytes no edit may touch.
+
+    These are the bare URLs and emails that start in Text outside links and
+    images, extended over the spaces on both sides.
+    """
+    mask = bytearray(len(src) + 1)
+    for ev, stack in _prose(events):
+        if any(s.tag in _LINKS for s in stack):
+            continue
+        for m in _BARE_LINK.finditer(src, ev.start, ev.end):
             _protect_bare_link(src, mask, m.start())
     return mask
 
@@ -199,18 +186,6 @@ def _protect_bare_link(src: bytes, mask: bytearray, start: int) -> None:
     while end < len(src) and src[end] == _SPACE:
         end += 1
     mask[start:end] = b"\x01" * (end - start)
-
-
-def _require_sorted_disjoint(spans: list[tuple[int, int]]) -> None:
-    for (_, end), (start, _) in zip(spans, spans[1:]):
-        if start < end:
-            raise RuntimeError(f"spans overlap or are unsorted at byte {start}")
-
-
-def _inside(spans: list[tuple[int, int]], pos: int) -> bool:
-    """Whether `pos` lies in one of `spans`, which are sorted and disjoint."""
-    i = bisect_right(spans, (pos, float("inf"))) - 1
-    return i >= 0 and pos < spans[i][1]
 
 
 def _hides_text(start: _Event) -> bool:
@@ -337,7 +312,13 @@ def _groups(positions: set[int]) -> list[frozenset[int]]:
 
 
 def _delete(src: bytes, positions: set[int]) -> bytes:
-    return bytes(b for i, b in enumerate(src) if i not in positions)
+    out = bytearray()
+    kept_from = 0
+    for pos in sorted(positions):
+        out += src[kept_from:pos]
+        kept_from = pos + 1
+    out += src[kept_from:]
+    return bytes(out)
 
 
 def _only_spaces_removed(before: bytes, after: bytes) -> bool:
@@ -354,6 +335,8 @@ def _only_spaces_removed(before: bytes, after: bytes) -> bool:
 def _pass(text: str) -> str:
     src = text.encode()
     events = _parse(text)
+    if _unparsed_dollar(src, events):
+        return text
     mask = _protected(src, events)
 
     positions = set()
@@ -366,18 +349,25 @@ def _pass(text: str) -> str:
     # Keep deletions only if the result has the same `_shape`. A set of groups
     # that changes it is halved until each half keeps the shape or is a single
     # group, which is then dropped. In `日本 **(a)** 語` both spaces stay:
-    # deleting either one turns the `**` into literal text.
+    # deleting either one turns the `**` into literal text. After
+    # `_MAX_REJECTIONS` dropped groups, the groups not yet tried are dropped
+    # too.
     shape = _shape(events)
     accepted: set[int] = set()
+    rejections = 0
 
     def accept(batch: list[frozenset[int]]) -> None:
-        nonlocal accepted
+        nonlocal accepted, rejections
+        if rejections >= _MAX_REJECTIONS:
+            return
         trial = accepted.union(*batch)
         if _shape(_parse(_delete(src, trial).decode())) == shape:
             accepted = trial
         elif len(batch) > 1:
             accept(batch[: len(batch) // 2])
             accept(batch[len(batch) // 2 :])
+        else:
+            rejections += 1
 
     accept(groups)
     out = _delete(src, accepted)
@@ -390,11 +380,16 @@ def format_text(text: str) -> str:
     """Remove spaces adjacent to CJK characters in Markdown `text`.
 
     The result is `text` with some U+0020 characters deleted, and pulldown-cmark
-    parses it to the same `_shape`. Passes repeat until one changes nothing, so
-    `format_text` of the result returns it unchanged.
+    parses it to the same `_shape`. A `text` whose prose holds a `$` not
+    escaped by a backslash (see `_unparsed_dollar`) is returned unchanged. A
+    leading BOM is set aside
+    while parsing, so front matter after it is recognised. Passes repeat until
+    one changes nothing, so `format_text` of the result returns it unchanged.
     """
+    bom = _BOM if text.startswith(_BOM) else ""
+    text = text.removeprefix(bom)
     while True:
         out = _pass(text)
         if out == text:
-            return out
+            return bom + out
         text = out
