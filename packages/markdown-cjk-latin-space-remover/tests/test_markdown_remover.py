@@ -2,8 +2,9 @@
 
 `FOLDED` holds inputs with their expected output after spaces are removed;
 `KEPT` holds inputs that must come back unchanged. Cases marked `# MIRROR`
-carry the same label in typst-cjk-latin-space-remover's suite and in
-mdformat-no-cjk-latin-space's; keep the three in lockstep.
+carry the same label in mdformat-no-cjk-latin-space's suite and in the Typst
+crate's (`crates/cjk-latin-space-typst-core/src/tests.rs`); keep the three in
+lockstep.
 """
 
 import io

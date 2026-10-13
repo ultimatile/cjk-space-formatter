@@ -25,7 +25,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # (distribution name, importable module name)
 PACKAGES = [
     ("mdformat-no-cjk-latin-space", "mdformat_no_cjk_latin_space"),
-    ("typst-cjk-latin-space-remover", "typst_cjk_latin_space_remover"),
     ("markdown-cjk-latin-space-remover", "markdown_cjk_latin_space_remover"),
 ]
 PACKAGE_IDS = [module for _, module in PACKAGES]
@@ -152,9 +151,7 @@ def test_wheel_ignores_a_foreign_top_level_core(artifacts, tmp_path, dist, modul
     assert _run_probe(probe) == "日本語test"
 
 
-@pytest.mark.parametrize(
-    "module", ["typst_cjk_latin_space_remover", "markdown_cjk_latin_space_remover"]
-)
+@pytest.mark.parametrize("module", ["markdown_cjk_latin_space_remover"])
 def test_public_api_from_the_wheel_ignores_a_foreign_core(artifacts, tmp_path, module):
     package_root = _extract_wheel(artifacts[module]["wheel"], tmp_path / "wheel")
     foreign = tmp_path / "foreign"
