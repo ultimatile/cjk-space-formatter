@@ -13,7 +13,7 @@ struct Output {
     stderr: String,
 }
 
-/// Run the CLI in `dir`. `stdin` is piped when given and closed otherwise.
+/// Run the CLI in `dir`. `stdin` is piped when given and empty otherwise.
 fn run(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Output {
     let mut child = Command::new(BIN)
         .args(args)
@@ -38,7 +38,15 @@ fn run(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Output {
     }
 }
 
-/// A fresh directory for the test `name`.
+#[track_caller]
+fn assert_starts_with(text: &str, prefix: &str) {
+    assert!(
+        text.starts_with(prefix),
+        "{text:?} does not start with {prefix:?}"
+    );
+}
+
+/// A fresh directory named `name` under the test's temporary directory.
 fn dir(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     let _ = fs::remove_dir_all(&dir);
@@ -80,12 +88,7 @@ fn stdin_errors_exit_with_2() {
     let d = dir("stdin_errors_exit_with_2");
     let out = run(&d, &[], Some(b"\xff\xfe"));
     assert_eq!((out.status, out.stdout.as_str()), (2, ""));
-    assert!(
-        out.stderr
-            .starts_with("error: <stdin> is not valid UTF-8: "),
-        "{}",
-        out.stderr
-    );
+    assert_starts_with(&out.stderr, "error: <stdin> is not valid UTF-8: ");
 
     let out = run(&d, &[], Some("本文 abc\n未閉 $ x".as_bytes()));
     assert_eq!((out.status, out.stdout.as_str()), (2, ""));
@@ -161,13 +164,9 @@ fn check_wins_over_diff_which_wins_over_in_place() {
     );
     assert_eq!(fs::read_to_string(d.join("a.typ")).unwrap(), source);
 
-    let out = run(&d, &["--diff", "-i", "a.typ"], None);
+    let out = run(&d, &["--diff", "--in-place", "a.typ"], None);
     assert_eq!(out.status, 0);
-    assert!(
-        out.stdout.starts_with("--- a/a.typ\n+++ b/a.typ\n"),
-        "{}",
-        out.stdout
-    );
+    assert_starts_with(&out.stdout, "--- a/a.typ\n+++ b/a.typ\n");
     assert_eq!(fs::read_to_string(d.join("a.typ")).unwrap(), source);
 }
 
@@ -186,6 +185,21 @@ fn diff_is_a_unified_diff() {
         "--- a/a.typ\n+++ b/a.typ\n\
          @@ -1,5 +1,5 @@\n line 1\n-日本 English\n+日本English\n line 3\n line 4\n line 5\n\
          @@ -8,5 +8,5 @@\n line 8\n line 9\n line 10\n-テスト です\n+テストです\n line 12\n"
+    );
+
+    // Six unchanged lines lie between the changes, so their context windows
+    // touch and the two share a hunk.
+    let mut source = lines.clone();
+    source[1] = "日本 English\n".into();
+    source[8] = "テスト です\n".into();
+    fs::write(d.join("b.typ"), source.concat()).unwrap();
+    let out = run(&d, &["--diff", "b.typ"], None);
+    assert_eq!(
+        out.stdout,
+        "--- a/b.typ\n+++ b/b.typ\n\
+         @@ -1,12 +1,12 @@\n line 1\n-日本 English\n+日本English\n\
+         \x20line 3\n line 4\n line 5\n line 6\n line 7\n line 8\n\
+         -テスト です\n+テストです\n line 10\n line 11\n line 12\n"
     );
 
     fs::write(d.join("same.typ"), "unchanged text\n").unwrap();
@@ -235,12 +249,7 @@ fn a_file_that_cannot_be_formatted_exits_with_2() {
 
     let out = run(&d, &["bad.typ"], None);
     assert_eq!(out.status, 2);
-    assert!(
-        out.stderr
-            .starts_with("error: bad.typ is not valid UTF-8: "),
-        "{}",
-        out.stderr
-    );
+    assert_starts_with(&out.stderr, "error: bad.typ is not valid UTF-8: ");
 
     let out = run(&d, &["syntax.typ"], None);
     assert_eq!((out.status, out.stdout.as_str()), (2, ""));
@@ -248,6 +257,13 @@ fn a_file_that_cannot_be_formatted_exits_with_2() {
         out.stderr,
         "error: syntax.typ: line 3: expected pattern\n\
          error: syntax.typ: line 4: unclosed delimiter\n"
+    );
+
+    // A lone `-` is a file name, not a flag.
+    let out = run(&d, &["-"], None);
+    assert_eq!(
+        (out.status, out.stderr.as_str()),
+        (2, "error: - not found\n")
     );
 
     let out = run(&d, &["--bogus"], None);
@@ -270,11 +286,41 @@ fn an_unreadable_file_exits_with_2() {
     }
     let out = run(&d, &["locked.typ"], None);
     assert_eq!(out.status, 2);
-    assert!(
-        out.stderr.starts_with("error: locked.typ: "),
-        "{}",
-        out.stderr
-    );
+    assert_starts_with(&out.stderr, "error: locked.typ: ");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_write_exits_with_2() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = dir("a_failed_write");
+    let path = d.join("readonly.typ");
+    fs::write(&path, "日本 English\n").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+    if fs::OpenOptions::new().write(true).open(&path).is_ok() {
+        return; // running as a user that ignores file modes
+    }
+    let out = run(&d, &["-i", "readonly.typ"], None);
+    assert_eq!((out.status, out.stdout.as_str()), (2, ""));
+    assert_starts_with(&out.stderr, "error: readonly.typ: ");
+}
+
+#[test]
+fn a_double_dash_ends_the_flags() {
+    let d = dir("a_double_dash_ends_the_flags");
+    fs::write(d.join("--check"), "日本 English\n").unwrap();
+    let out = run(&d, &["--", "--check"], None);
+    assert_eq!((out.status, out.stdout.as_str()), (0, "日本English\n"));
+}
+
+#[test]
+fn help_prints_the_usage() {
+    let d = dir("help_prints_the_usage");
+    for flag in ["-h", "--help"] {
+        let out = run(&d, &[flag], None);
+        assert_eq!(out.status, 0);
+        assert_starts_with(&out.stdout, "usage: typst-cjk-latin-space-remover ");
+    }
 }
 
 #[test]
@@ -293,16 +339,18 @@ fn nothing_is_written_when_a_later_file_fails() {
 #[test]
 fn version_names_the_program() {
     let d = dir("version_names_the_program");
-    let out = run(&d, &["--version"], None);
-    assert_eq!(
-        (out.status, out.stdout.as_str()),
-        (
-            0,
-            concat!(
-                "typst-cjk-latin-space-remover ",
-                env!("CARGO_PKG_VERSION"),
-                "\n"
+    for flag in ["-V", "--version"] {
+        let out = run(&d, &[flag], None);
+        assert_eq!(
+            (out.status, out.stdout.as_str()),
+            (
+                0,
+                concat!(
+                    "typst-cjk-latin-space-remover ",
+                    env!("CARGO_PKG_VERSION"),
+                    "\n"
+                )
             )
-        )
-    );
+        );
+    }
 }

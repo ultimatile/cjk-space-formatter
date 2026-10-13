@@ -2,7 +2,7 @@
 name = "cjk-latin-space-typst-core"
 version = "0.1.0"
 edition = "2024"
-description = "Remove CJK-Latin spaces from Typst source without changing its syntax tree"
+description = "Remove CJK-Latin spaces from the markup prose of Typst source"
 license = "MIT"
 repository = "https://github.com/ultimatile/cjk-space-formatter"
 publish = false

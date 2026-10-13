@@ -1,11 +1,11 @@
 //! Remove spaces next to CJK characters from Typst source.
 //!
-//! [`format`] returns its input with some U+0020 deleted and every other byte
+//! [`format()`] returns its input with some U+0020 deleted and every other byte
 //! unchanged. A run of U+0020 is a candidate when it is markup prose (a
 //! `Space` or part of a `Text` whose parent is `Markup`), the characters on
-//! each side satisfy the rule in [`rule`], and it does not sit directly before
-//! a smart quote. A candidate is deleted only if the source without it parses
-//! to the same [`shape`] as the source with it.
+//! each side satisfy the rule in the `rule` module, and it does not sit
+//! directly before a smart quote. Candidates are deleted only as a set whose
+//! removal leaves the source parsing to the same `shape`.
 
 mod rule;
 
@@ -78,12 +78,18 @@ pub fn format(source: &str) -> Result<String, SyntaxErrors> {
     if let Some(errors) = syntax_errors(&parse(body), body) {
         return Err(errors);
     }
-    let mut text = body.to_owned();
-    // Each pass deletes at least one byte or ends the loop.
+    Ok(format!("{bom}{}", fixpoint(body.to_owned(), pass)))
+}
+
+/// `text` after applying `pass` until it returns `None`.
+///
+/// `pass` must return a shorter text or `None`.
+fn fixpoint(mut text: String, pass: impl Fn(&str) -> Option<String>) -> String {
     while let Some(out) = pass(&text) {
+        assert!(out.len() < text.len());
         text = out;
     }
-    Ok(format!("{bom}{text}"))
+    text
 }
 
 fn syntax_errors(root: &SyntaxNode, text: &str) -> Option<SyntaxErrors> {
@@ -131,7 +137,8 @@ fn pass(text: &str) -> Option<String> {
     Some(delete(text, &accepted))
 }
 
-/// The runs of U+0020 in markup prose that the rule removes, in source order.
+/// The runs of U+0020 in markup prose that the rule removes and that do not
+/// sit directly before a smart quote, in source order.
 fn candidates(root: &SyntaxNode, text: &str) -> Vec<Range<usize>> {
     fn walk(node: &LinkedNode, spaces: &mut Vec<Range<usize>>, quotes: &mut Vec<usize>) {
         let mut children = node.children().peekable();
@@ -148,12 +155,7 @@ fn candidates(root: &SyntaxNode, text: &str) -> Vec<Range<usize>> {
                 if node.parent_kind() == Some(SyntaxKind::Markup) =>
             {
                 for run in rule::space_runs(node.get().leaf_text()) {
-                    let run = start + run.start..start + run.end;
-                    // A run can continue from the previous leaf.
-                    match spaces.last_mut() {
-                        Some(last) if last.end == run.start => last.end = run.end,
-                        _ => spaces.push(run),
-                    }
+                    spaces.push(start + run.start..start + run.end);
                 }
             }
             _ => {}

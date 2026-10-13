@@ -49,7 +49,7 @@ packages/
   markdown-cjk-latin-space-remover/  # published from here; not on PyPI yet
   mdformat-no-cjk-latin-space/       # published from here; not on PyPI yet
 core/                                # cjk-latin-space core: squash(plain_run) — build-time vendored, not published
-conformance/                         # pure-run corpus, read by the Python core and the Rust crate
+conformance/                         # pure-run corpus, run against the Python core and the Rust crate
 crates/
   typst-cjk-latin-space-remover/     # Typst CLI sources; its manifest is the root Cargo.toml
   cjk-latin-space-typst-core/        # the crate the Typst CLI is built on

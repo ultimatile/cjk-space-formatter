@@ -20,7 +20,7 @@ CASES = json.loads(Path(__file__).with_name("cases.json").read_text(encoding="ut
 
 
 def test_corpus_size():
-    assert len(CASES) == 20
+    assert len(CASES) == 21
 
 
 @pytest.mark.parametrize("text, expected", CASES, ids=[c[0] or "empty" for c in CASES])

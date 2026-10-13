@@ -12,6 +12,11 @@ fn fmt(source: &str) -> String {
 fn check(cases: &[(&str, &str)]) {
     for (source, expected) in cases {
         assert_eq!(fmt(source), *expected, "source: {source:?}");
+        assert_eq!(
+            expected.replace(' ', ""),
+            source.replace(' ', ""),
+            "more than spaces changed: {source:?}"
+        );
         assert_eq!(fmt(expected), *expected, "not idempotent: {source:?}");
     }
 }
@@ -85,6 +90,7 @@ fn hash_expressions() {
             r#"#text("say \"hi\"")テスト"#,
         ),
         ("#footnote[注] に", "#footnote[注]に"),
+        // No space is next to a CJK character.
         ("#sym.ballot some text", "#sym.ballot some text"),
         ("#sym.ballot", "#sym.ballot"),
     ]);
@@ -218,9 +224,19 @@ fn block_raw() {
 
 #[test]
 fn rejected_candidates_do_not_block_the_others() {
-    // Eight candidates on one line; the two after `\` and before `-5` change
-    // the tree, so the batch is halved more than once.
+    // The candidates after `\` and before `-5` change the tree; the others on
+    // the line do not.
     check(&[("一 二 三 \\ 四 五 六 -5 七 八", "一二三\\ 四五六 -5七八")]);
+}
+
+#[test]
+fn passes_repeat_until_one_changes_nothing() {
+    let one_space = |text: &str| {
+        text.find(' ')
+            .map(|i| format!("{}{}", &text[..i], &text[i + 1..]))
+    };
+    assert_eq!(fixpoint("a  b c".into(), one_space), "abc");
+    assert_eq!(fixpoint("abc".into(), one_space), "abc");
 }
 
 #[test]
@@ -253,7 +269,8 @@ fn syntax_errors_are_returned_with_their_lines() {
     );
 
     let errors = format("#let\n\n#(1 +").unwrap_err();
-    let lines: Vec<usize> = errors.iter().map(SyntaxError::line).collect();
-    assert_eq!(lines.len(), errors.iter().count());
-    assert!(lines.len() >= 2 && lines.is_sorted(), "{errors}");
+    assert_eq!(
+        errors.to_string(),
+        "line 1: expected pattern; line 3: unclosed delimiter; line 3: expected expression"
+    );
 }

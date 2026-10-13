@@ -73,9 +73,7 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
 
     let mut stdout = io::stdout().lock();
     let write = |stdout: &mut io::StdoutLock, bytes: &[u8]| {
-        stdout
-            .write_all(bytes)
-            .map_err(|err| Failure(format!("stdout: {err}")))
+        stdout.write_all(bytes).map_err(io_failure("stdout"))
     };
 
     // stdin mode when no files are given and stdin is not a terminal
@@ -88,7 +86,7 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
         let mut data = Vec::new();
         io::stdin()
             .read_to_end(&mut data)
-            .map_err(|err| Failure(format!("<stdin>: {err}")))?;
+            .map_err(io_failure("<stdin>"))?;
         let (text, formatted) = format("<stdin>", data)?;
         if args.check {
             return Ok(if text == formatted {
@@ -115,7 +113,7 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
         if path.is_dir() {
             return Err(Failure(format!("{name} is a directory")));
         }
-        let data = std::fs::read(path).map_err(|err| Failure(format!("{name}: {err}")))?;
+        let data = std::fs::read(path).map_err(io_failure(&name))?;
         let (text, formatted) = format(&name, data)?;
         results.push((path, name, text, formatted));
     }
@@ -132,8 +130,7 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
             write(&mut stdout, diff(&name, &text, &formatted).as_bytes())?;
         } else if args.in_place {
             if changed {
-                std::fs::write(path, &formatted)
-                    .map_err(|err| Failure(format!("{name}: {err}")))?;
+                std::fs::write(path, &formatted).map_err(io_failure(&name))?;
                 write(&mut stdout, format!("reformatted {name}\n").as_bytes())?;
             }
         } else {
@@ -147,6 +144,11 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+/// Turns an I/O error on `name` into a [`Failure`].
+fn io_failure(name: &str) -> impl Fn(io::Error) -> Failure {
+    move |err| Failure(format!("{name}: {err}"))
 }
 
 /// The decoded input and its formatted form.

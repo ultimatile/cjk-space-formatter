@@ -75,25 +75,20 @@ mod tests {
     /// `text` with every run removed that `removable` marks, as the Python
     /// `squash` does on a plain run.
     fn squash(text: &str) -> String {
-        let mut out = String::with_capacity(text.len());
-        let mut last = 0;
-        for run in space_runs(text) {
+        let mut runs = space_runs(text);
+        runs.retain(|run| {
             let prev = text[..run.start].chars().next_back();
             let next = text[run.end..].chars().next();
-            if removable(prev, next) {
-                out.push_str(&text[last..run.start]);
-                last = run.end;
-            }
-        }
-        out.push_str(&text[last..]);
-        out
+            removable(prev, next)
+        });
+        crate::delete(text, &runs)
     }
 
     #[test]
     fn conformance_cases() {
         let cases: Vec<(String, String)> =
             serde_json::from_str(include_str!("../../../conformance/cases.json")).unwrap();
-        assert_eq!(cases.len(), 20);
+        assert_eq!(cases.len(), 21);
         for (input, expected) in cases {
             assert_eq!(squash(&input), expected, "input: {input:?}");
         }
