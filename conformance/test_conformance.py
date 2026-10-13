@@ -3,9 +3,11 @@
 `cases.json` is the contract every implementation of the invariant must
 satisfy: a JSON array of `[input, expected]` pairs. Inputs are PURE RUNS — no
 protected spans (no math, code, refs) — so there is no target dimension:
-`squash(str) -> str` is exercised directly. Front-end-specific behaviour
-(protected spans, boundaries, document re-normalisation) is tested in each
-package's own suite, not here.
+`squash(str) -> str` is exercised directly. This module runs the cases against
+the Python core; `crates/cjk-latin-space-typst-core` runs the same file against
+its Rust implementation of the rule. Front-end-specific behaviour (protected
+spans, boundaries, document re-normalisation) is tested in each package's own
+suite, not here.
 """
 
 import json

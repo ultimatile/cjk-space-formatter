@@ -1,6 +1,8 @@
 """cjk-latin-space core.
 
-Single source of the format-independent invariant shared by every front-end:
+Single source of the format-independent invariant shared by every Python
+front-end (the Rust crate `cjk-latin-space-typst-core` implements the same rule
+and runs the same `conformance/cases.json`):
 within one *plain run* of text (no protected spans — no math, code, refs), a run
 of spaces *between* two non-space characters is removed when either side is CJK
 (so CJK<->Latin, CJK<->digit and CJK<->CJK all collapse), with one exception — a

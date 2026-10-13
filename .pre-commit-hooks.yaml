@@ -1,0 +1,7 @@
+- id: typst-cjk-latin-space-remover
+  name: typst-cjk-latin-space-remover
+  description: Remove spaces next to CJK characters in Typst files
+  entry: typst-cjk-latin-space-remover
+  language: rust
+  files: \.typ$
+  args: [-i]

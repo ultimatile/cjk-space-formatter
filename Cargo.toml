@@ -1,0 +1,27 @@
+# The root manifest is the CLI package and the workspace at once: pre-commit's
+# `language: rust` installs with `cargo install --path .` at the repository
+# root, which needs a package there.
+[workspace]
+resolver = "3"
+members = ["crates/cjk-latin-space-typst-core"]
+
+[package]
+name = "typst-cjk-latin-space-remover"
+version = "0.1.0"
+edition = "2024"
+description = "CLI: remove CJK-Latin spaces in Typst files, following the Typst parser"
+license = "MIT"
+repository = "https://github.com/ultimatile/cjk-space-formatter"
+readme = "crates/typst-cjk-latin-space-remover/README.md"
+publish = false
+
+[[bin]]
+name = "typst-cjk-latin-space-remover"
+path = "crates/typst-cjk-latin-space-remover/src/main.rs"
+
+[[test]]
+name = "cli"
+path = "crates/typst-cjk-latin-space-remover/tests/cli.rs"
+
+[dependencies]
+cjk-latin-space-typst-core = { path = "crates/cjk-latin-space-typst-core" }
