@@ -9,10 +9,11 @@
 
 mod rule;
 
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::ops::Range;
 
-use typst_syntax::{LinkedNode, SyntaxKind, SyntaxNode};
+use typst_syntax::{Lines, LinkedNode, SyntaxKind, SyntaxNode};
 
 #[cfg(test)]
 thread_local! {
@@ -36,7 +37,8 @@ pub struct SyntaxError {
 }
 
 impl SyntaxError {
-    /// The 1-based line of the error in the source, counted at LF.
+    /// The 1-based line of the error in the source. Lines end where Typst
+    /// ends them, with `\r\n` as one line break.
     pub fn line(&self) -> usize {
         self.line
     }
@@ -90,13 +92,15 @@ pub fn format(source: &str) -> Result<String, SyntaxErrors> {
     if let Some(errors) = syntax_errors(&parse(body), body) {
         return Err(errors);
     }
-    Ok(format!("{bom}{}", fixpoint(body.to_owned(), pass)))
+    let mut memo = HashMap::new();
+    let text = fixpoint(body.to_owned(), |text| pass(text, &mut memo));
+    Ok(format!("{bom}{text}"))
 }
 
 /// `text` after applying `pass` until it returns `None`.
 ///
 /// `pass` must return a shorter text or `None`.
-fn fixpoint(mut text: String, pass: impl Fn(&str) -> Option<String>) -> String {
+fn fixpoint(mut text: String, mut pass: impl FnMut(&str) -> Option<String>) -> String {
     while let Some(out) = pass(&text) {
         assert!(out.len() < text.len());
         text = out;
@@ -105,10 +109,10 @@ fn fixpoint(mut text: String, pass: impl Fn(&str) -> Option<String>) -> String {
 }
 
 fn syntax_errors(root: &SyntaxNode, text: &str) -> Option<SyntaxErrors> {
-    fn walk(node: &LinkedNode, text: &str, out: &mut Vec<SyntaxError>) {
+    fn walk(node: &LinkedNode, lines: &Lines<&str>, out: &mut Vec<SyntaxError>) {
         if node.kind() == SyntaxKind::Error {
             let (errors, _) = node.get().errors_and_warnings();
-            let line = text[..node.range().start].matches('\n').count() + 1;
+            let line = lines.byte_to_line(node.range().start).expect("in the text") + 1;
             for error in errors {
                 out.push(SyntaxError {
                     line,
@@ -117,7 +121,7 @@ fn syntax_errors(root: &SyntaxNode, text: &str) -> Option<SyntaxErrors> {
             }
         }
         for child in node.children() {
-            walk(&child, text, out);
+            walk(&child, lines, out);
         }
     }
 
@@ -126,7 +130,7 @@ fn syntax_errors(root: &SyntaxNode, text: &str) -> Option<SyntaxErrors> {
         return None;
     }
     let mut found = Vec::new();
-    walk(&LinkedNode::new(root), text, &mut found);
+    walk(&LinkedNode::new(root), &Lines::new(text), &mut found);
     assert_eq!(
         found.len(),
         errors.len(),
@@ -135,29 +139,61 @@ fn syntax_errors(root: &SyntaxNode, text: &str) -> Option<SyntaxErrors> {
     Some(SyntaxErrors(found))
 }
 
+/// The runs kept on a line's source alone, by the source and its candidate
+/// runs, so that a line unchanged since an earlier round is not checked again.
+type Memo = HashMap<(String, Vec<Range<usize>>), Vec<Range<usize>>>;
+
 /// One round of deletions, or `None` when the round deletes nothing.
-fn pass(text: &str) -> Option<String> {
+fn pass(text: &str, memo: &mut Memo) -> Option<String> {
     let root = parse(text);
-    // The candidates of a line are first checked on the line's own source,
-    // when that source alone parses to what the line is in the whole text.
-    // The ones kept are then checked on the whole text.
+    let lines = lines(&root, text);
+    // Each candidate is first checked on the source of the innermost line
+    // around it that parses alone to what that line is in the whole text.
+    // The ones kept there, and those with no such line, are then checked on
+    // the whole text.
+    let mut alone: Vec<Option<Option<Vec<Token>>>> = vec![None; lines.len()];
+    let mut by_line: BTreeMap<usize, Vec<Range<usize>>> = BTreeMap::new();
     let mut kept = Vec::new();
-    for line in candidates(&root, text) {
-        let source = &text[line.range.clone()];
-        let local_shape = shape(&parse(source));
-        if local_shape != line.shape {
-            kept.extend(line.runs);
+    for (i, line) in lines.iter().enumerate() {
+        if line.runs.is_empty() {
             continue;
         }
-        let start = line.range.start;
-        let local: Vec<_> = line
-            .runs
+        let mut at = Some(i);
+        while let Some(j) = at {
+            let checked = alone[j].get_or_insert_with(|| {
+                let local = shape(&parse(&text[lines[j].range.clone()]));
+                (local == lines[j].shape()).then_some(local)
+            });
+            if checked.is_some() {
+                break;
+            }
+            at = lines[j].outer;
+        }
+        match at {
+            Some(j) => by_line
+                .entry(j)
+                .or_default()
+                .extend(line.runs.iter().cloned()),
+            None => kept.extend(line.runs.iter().cloned()),
+        }
+    }
+    for (j, mut runs) in by_line {
+        runs.sort_by_key(|run| run.start);
+        let start = lines[j].range.start;
+        let source = &text[lines[j].range.clone()];
+        let local: Vec<_> = runs
             .iter()
             .map(|run| run.start - start..run.end - start)
             .collect();
-        for run in accept(source, &local_shape, &local) {
-            kept.push(run.start + start..run.end + start);
-        }
+        let local_shape = alone[j].take().flatten().expect("the line parses alone");
+        let accepted = memo
+            .entry((source.to_owned(), local.clone()))
+            .or_insert_with(|| accept(source, &local_shape, &local));
+        kept.extend(
+            accepted
+                .iter()
+                .map(|run| run.start + start..run.end + start),
+        );
     }
     if kept.is_empty() {
         return None;
@@ -171,90 +207,101 @@ fn pass(text: &str) -> Option<String> {
 }
 
 /// A stretch of one `Markup` node's children that ends with a `Space` or
-/// `Parbreak` child containing a newline, or with the node, so a child
+/// `Parbreak` child containing a line break, or with the node, so a child
 /// spanning several source lines stays in one piece.
 struct Line {
     range: Range<usize>,
-    /// The `shape` of the children, as a `Markup` of their own.
-    shape: Vec<Token>,
+    children: Vec<SyntaxNode>,
     /// Candidate runs, in source order.
     runs: Vec<Range<usize>>,
+    /// The line of the enclosing `Markup` that holds this line's node.
+    outer: Option<usize>,
 }
 
-/// The runs of U+0020 in markup prose that the rule removes and that do not
-/// sit directly before a smart quote, grouped by line.
-fn candidates(root: &SyntaxNode, text: &str) -> Vec<Line> {
+impl Line {
+    /// The `shape` of the children, as a `Markup` of their own.
+    fn shape(&self) -> Vec<Token> {
+        let mut out = vec![Token::Open(SyntaxKind::Markup)];
+        for child in &self.children {
+            shape_into(child, Some(SyntaxKind::Markup), &mut out);
+        }
+        out.push(Token::Close);
+        out
+    }
+}
+
+/// Every line of `root`, outer lines before the lines nested in them, with
+/// the runs of U+0020 in markup prose that the rule removes and that do not
+/// sit directly before a smart quote.
+fn lines(root: &SyntaxNode, text: &str) -> Vec<Line> {
     struct Walk {
         lines: Vec<Line>,
         quotes: Vec<usize>,
     }
 
-    fn walk(node: &LinkedNode, out: &mut Walk) {
+    fn open(out: &mut Walk, start: usize, outer: Option<usize>) -> usize {
+        out.lines.push(Line {
+            range: start..start,
+            children: Vec::new(),
+            runs: Vec::new(),
+            outer,
+        });
+        out.lines.len() - 1
+    }
+
+    fn walk(node: &LinkedNode, outer: Option<usize>, out: &mut Walk) {
         if node.kind() == SyntaxKind::SmartQuote {
             out.quotes.push(node.range().start);
         }
         if node.kind() != SyntaxKind::Markup {
             for child in node.children() {
-                walk(&child, out);
+                walk(&child, outer, out);
             }
             return;
         }
-        let open = || vec![Token::Open(SyntaxKind::Markup)];
-        let mut start = node.range().start;
-        let mut runs = Vec::new();
-        let mut tokens = open();
+        let mut line = open(out, node.range().start, outer);
         for child in node.children() {
-            shape_into(child.get(), Some(SyntaxKind::Markup), &mut tokens);
+            out.lines[line].children.push(child.get().clone());
             let leaf = child.get().leaf_text();
             match child.kind() {
                 SyntaxKind::Space | SyntaxKind::Text => {
                     let offset = child.range().start;
                     for run in rule::space_runs(leaf) {
-                        runs.push(offset + run.start..offset + run.end);
+                        out.lines[line]
+                            .runs
+                            .push(offset + run.start..offset + run.end);
                     }
                 }
-                _ => walk(&child, out),
+                _ => walk(&child, Some(line), out),
             }
             let breaks = matches!(child.kind(), SyntaxKind::Space | SyntaxKind::Parbreak)
-                && leaf.contains('\n');
+                && leaf.chars().any(typst_syntax::is_newline);
             if breaks {
                 let end = child.range().end;
-                tokens.push(Token::Close);
-                out.lines.push(Line {
-                    range: start..end,
-                    shape: std::mem::replace(&mut tokens, open()),
-                    runs: std::mem::take(&mut runs),
-                });
-                start = end;
+                out.lines[line].range.end = end;
+                line = open(out, end, outer);
             }
         }
-        tokens.push(Token::Close);
-        out.lines.push(Line {
-            range: start..node.range().end,
-            shape: tokens,
-            runs,
-        });
+        out.lines[line].range.end = node.range().end;
     }
 
     let mut out = Walk {
         lines: Vec::new(),
         quotes: Vec::new(),
     };
-    walk(&LinkedNode::new(root), &mut out);
+    walk(&LinkedNode::new(root), None, &mut out);
     out.quotes.sort_unstable();
-    let mut lines = out.lines;
-    for line in &mut lines {
+    for line in &mut out.lines {
         // Whether a quote opens or closes depends on the character before it,
         // which the tree does not record.
         line.runs.retain(|run| {
             rule::removable_in(text, run) && out.quotes.binary_search(&run.end).is_err()
         });
     }
-    lines.retain(|line| !line.runs.is_empty());
-    lines
+    out.lines
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Token {
     Open(SyntaxKind),
     Close,

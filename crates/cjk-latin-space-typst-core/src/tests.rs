@@ -174,6 +174,14 @@ fn rejected_candidates_cost_a_line_each() {
         (lines.clone(), expected.clone()),
         // Lines inside a content block count as lines too.
         (format!("#[\n{lines}]\n"), format!("#[\n{expected}]\n")),
+        // A heading's text alone parses as a numbered-list item, so its candidates
+        // are checked on the heading's line.
+        (
+            lines.replace("式 @", "= 1. 式 @"),
+            expected.replace("式@", "= 1.式@"),
+        ),
+        // A lone `\r` ends a line too.
+        (lines.replace('\n', "\r"), expected.replace('\n', "\r")),
     ] {
         let (out, per_byte) = parsed_per_byte(&source);
         assert_eq!(out, expected);
@@ -276,6 +284,25 @@ fn passes_repeat_until_one_changes_nothing() {
 }
 
 #[test]
+fn a_line_unchanged_since_an_earlier_pass_is_not_checked_again() {
+    let text: String = (0..50).map(|i| format!("式 @eq:a{i} の計算\n")).collect();
+    let mut memo = Memo::new();
+    let measure = |memo: &mut Memo| {
+        PARSED.with(|parsed| parsed.set(0));
+        pass(&text, memo);
+        PARSED.with(|parsed| parsed.get())
+    };
+    let first = measure(&mut memo);
+    let again = measure(&mut memo);
+    // Both rounds parse the text and each line once. Only the first also
+    // parses each line with its candidate deleted.
+    assert!(
+        first - again >= text.len() / 2,
+        "{again} bytes parsed again, {first} at first"
+    );
+}
+
+#[test]
 fn a_bom_is_kept_and_does_not_hide_the_first_line() {
     check(&[
         (
@@ -303,6 +330,12 @@ fn syntax_errors_are_returned_with_their_lines() {
         errors.to_string(),
         "line 1: expected semicolon or line break"
     );
+
+    // Typst also ends a line at a lone `\r`, and `\r\n` is one line break.
+    let errors = format("a\r日本 abc\r$ x").unwrap_err();
+    assert_eq!(errors.to_string(), "line 3: unclosed delimiter");
+    let errors = format("a\r\n日本 abc\r\n$ x").unwrap_err();
+    assert_eq!(errors.to_string(), "line 3: unclosed delimiter");
 
     let errors = format("#let\n\n#(1 +").unwrap_err();
     assert_eq!(
