@@ -306,6 +306,37 @@ fn a_failed_write_exits_with_2() {
 }
 
 #[test]
+fn a_failed_write_to_stdout_exits_with_2() {
+    use std::io::Read;
+    let d = dir("a_failed_write_to_stdout");
+    let mut child = Command::new(BIN)
+        .current_dir(&d)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The reader is gone before the CLI has its input, and the output has no
+    // final newline, so the failing write is the flush at exit.
+    drop(child.stdout.take());
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all("日本 English".as_bytes())
+        .unwrap();
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert_eq!(child.wait().unwrap().code(), Some(2));
+    assert_starts_with(&stderr, "error: stdout: ");
+}
+
+#[test]
 fn a_double_dash_ends_the_flags() {
     let d = dir("a_double_dash_ends_the_flags");
     fs::write(d.join("--check"), "日本 English\n").unwrap();

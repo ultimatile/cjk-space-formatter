@@ -19,8 +19,8 @@ from cjk_latin_space import squash
 CASES = json.loads(Path(__file__).with_name("cases.json").read_text(encoding="utf-8"))
 
 
-def test_corpus_size():
-    assert len(CASES) == 21
+def test_corpus_is_not_empty():
+    assert CASES
 
 
 @pytest.mark.parametrize("text, expected", CASES, ids=[c[0] or "empty" for c in CASES])

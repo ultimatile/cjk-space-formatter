@@ -2,10 +2,9 @@
 //!
 //! [`format()`] returns its input with some U+0020 deleted and every other byte
 //! unchanged. A run of U+0020 is a candidate when it is markup prose (a
-//! `Space` or part of a `Text` whose parent is `Markup`), the characters on
-//! each side satisfy the rule in the `rule` module, and it does not sit
-//! directly before a smart quote. Candidates are deleted only as a set whose
-//! removal leaves the source parsing to the same `shape`.
+//! `Space` or part of a `Text` whose parent is `Markup`) and the characters on
+//! each side satisfy the rule in the `rule` module. Candidates are deleted only
+//! as a set whose removal leaves the source parsing to the same `shape`.
 
 mod rule;
 
@@ -130,49 +129,83 @@ fn pass(text: &str) -> Option<String> {
     if candidates.is_empty() {
         return None;
     }
-    let accepted = accept(text, &shape(&root), &candidates);
+    // The candidates of each line are first checked on the line's own source;
+    // the ones kept there are then checked on the whole text.
+    let mut kept = Vec::new();
+    for (line, group) in by_line(&root, text.len(), &candidates) {
+        let source = &text[line.clone()];
+        let local: Vec<_> = group
+            .iter()
+            .map(|run| run.start - line.start..run.end - line.start)
+            .collect();
+        for run in accept(source, &shape(&parse(source)), &local) {
+            kept.push(run.start + line.start..run.end + line.start);
+        }
+    }
+    let accepted = accept(text, &shape(&root), &kept);
     if accepted.is_empty() {
         return None;
     }
     Some(delete(text, &accepted))
 }
 
-/// The runs of U+0020 in markup prose that the rule removes and that do not
-/// sit directly before a smart quote, in source order.
+/// The runs of U+0020 in markup prose that the rule removes, in source order.
 fn candidates(root: &SyntaxNode, text: &str) -> Vec<Range<usize>> {
-    fn walk(node: &LinkedNode, spaces: &mut Vec<Range<usize>>, quotes: &mut Vec<usize>) {
+    fn walk(node: &LinkedNode, spaces: &mut Vec<Range<usize>>) {
         let mut children = node.children().peekable();
         if children.peek().is_some() {
             for child in children {
-                walk(&child, spaces, quotes);
+                walk(&child, spaces);
             }
             return;
         }
-        let start = node.range().start;
-        match node.kind() {
-            SyntaxKind::SmartQuote => quotes.push(start),
-            SyntaxKind::Space | SyntaxKind::Text
-                if node.parent_kind() == Some(SyntaxKind::Markup) =>
-            {
-                for run in rule::space_runs(node.get().leaf_text()) {
-                    spaces.push(start + run.start..start + run.end);
-                }
+        let prose = node.parent_kind() == Some(SyntaxKind::Markup);
+        if prose && matches!(node.kind(), SyntaxKind::Space | SyntaxKind::Text) {
+            let start = node.range().start;
+            for run in rule::space_runs(node.get().leaf_text()) {
+                spaces.push(start + run.start..start + run.end);
             }
-            _ => {}
         }
     }
 
     let mut spaces = Vec::new();
-    let mut quotes = Vec::new();
-    walk(&LinkedNode::new(root), &mut spaces, &mut quotes);
-    spaces.retain(|run| {
-        let prev = text[..run.start].chars().next_back();
-        let next = text[run.end..].chars().next();
-        // Whether a quote opens or closes depends on the character before it,
-        // and the tree records neither.
-        rule::removable(prev, next) && quotes.binary_search(&run.end).is_err()
-    });
+    walk(&LinkedNode::new(root), &mut spaces);
+    spaces.retain(|run| rule::removable_in(text, run));
     spaces
+}
+
+/// `candidates` grouped by the top-level line they lie in.
+///
+/// A line here runs from the end of a top-level `Space` or `Parbreak` leaf
+/// that contains a newline to the end of the next one, or to an edge of the
+/// text, so a node spanning several source lines stays in one piece. Each item
+/// is the line's byte range and its candidates.
+fn by_line<'a>(
+    root: &SyntaxNode,
+    len: usize,
+    candidates: &'a [Range<usize>],
+) -> Vec<(Range<usize>, &'a [Range<usize>])> {
+    let mut starts = vec![0];
+    for child in LinkedNode::new(root).children() {
+        let breaks = matches!(child.kind(), SyntaxKind::Space | SyntaxKind::Parbreak)
+            && child.get().leaf_text().contains('\n');
+        if breaks {
+            starts.push(child.range().end);
+        }
+    }
+    let mut groups = Vec::new();
+    let mut rest = candidates;
+    for (i, &start) in starts.iter().enumerate() {
+        let end = starts.get(i + 1).copied().unwrap_or(len);
+        let count = rest.partition_point(|run| run.start < end);
+        let (group, tail) = rest.split_at(count);
+        rest = tail;
+        if !group.is_empty() {
+            groups.push((start..end, group));
+        }
+    }
+    assert!(rest.is_empty());
+    groups
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -182,6 +215,21 @@ enum Token {
     Leaf(SyntaxKind, String),
     /// Consecutive `Text` leaves of one `Markup`, without their U+0020.
     Prose(String),
+    /// A smart quote, and whether the prose before it ends in whitespace.
+    Quote(String, bool),
+    /// A label, and the `Text` leaf of the same `Markup` that it follows with
+    /// only `Space` leaves in between, without its U+0020.
+    Label(String, Option<String>),
+}
+
+/// What Typst reads from the prose before a leaf, beyond the tree.
+struct Before {
+    /// Whether the last `Text`, `Space` or `Parbreak` leaf of markup prose
+    /// ends in whitespace. The start of the text counts as whitespace.
+    space: bool,
+    /// The last `Text` leaf of markup prose, without its U+0020, when only
+    /// `Space` leaves have followed it and the node holding it has not closed.
+    text: Option<String>,
 }
 
 /// The tree with the U+0020 taken out of its markup prose.
@@ -190,24 +238,43 @@ enum Token {
 /// with two exceptions under a `Markup` parent: a `Space` leaf that is only
 /// U+0020 is left out, and `Text` leaves lose their U+0020 and merge with the
 /// `Text` before them when nothing else is in between.
+///
+/// Two leaves also carry what precedes them, because Typst reads it when it
+/// lays the document out: a smart quote opens or closes by the character
+/// before it, and a label attaches to the element before it.
 fn shape(root: &SyntaxNode) -> Vec<Token> {
-    fn walk(node: &SyntaxNode, parent: Option<SyntaxKind>, out: &mut Vec<Token>) {
+    fn walk(
+        node: &SyntaxNode,
+        parent: Option<SyntaxKind>,
+        before: &mut Before,
+        out: &mut Vec<Token>,
+    ) {
         let kind = node.kind();
         if node.children().len() > 0 {
             out.push(Token::Open(kind));
             for child in node.children() {
-                walk(child, Some(kind), out);
+                walk(child, Some(kind), before, out);
             }
             out.push(Token::Close);
+            // A label after the node follows the node, not the text in it.
+            before.text = None;
             return;
         }
         let text = node.leaf_text();
         let prose = parent == Some(SyntaxKind::Markup);
-        if prose && kind == SyntaxKind::Space && text.bytes().all(|b| b == b' ') {
+        if prose && kind == SyntaxKind::Space {
+            before.space = true;
+            if !text.bytes().all(|b| b == b' ') {
+                out.push(Token::Leaf(kind, text.to_string()));
+            }
             return;
         }
         if prose && kind == SyntaxKind::Text {
+            if let Some(last) = text.chars().next_back() {
+                before.space = last.is_whitespace();
+            }
             let text = text.as_str().replace(' ', "");
+            before.text = Some(text.clone());
             match out.last_mut() {
                 Some(Token::Prose(last)) => last.push_str(&text),
                 _ if text.is_empty() => {}
@@ -215,11 +282,27 @@ fn shape(root: &SyntaxNode) -> Vec<Token> {
             }
             return;
         }
-        out.push(Token::Leaf(kind, text.to_string()));
+        if kind == SyntaxKind::Label {
+            out.push(Token::Label(text.to_string(), before.text.take()));
+            return;
+        }
+        before.text = None;
+        match kind {
+            SyntaxKind::Parbreak => {
+                before.space = true;
+                out.push(Token::Leaf(kind, text.to_string()));
+            }
+            SyntaxKind::SmartQuote => out.push(Token::Quote(text.to_string(), before.space)),
+            _ => out.push(Token::Leaf(kind, text.to_string())),
+        }
     }
 
     let mut out = Vec::new();
-    walk(root, None, &mut out);
+    let mut before = Before {
+        space: true,
+        text: None,
+    };
+    walk(root, None, &mut before, &mut out);
     out
 }
 

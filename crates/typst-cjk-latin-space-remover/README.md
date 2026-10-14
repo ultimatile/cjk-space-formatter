@@ -24,7 +24,8 @@ Only markup prose is edited. Math, raw text, comments, and code — including
 string literals such as `#let x = "日本 語"` — keep their spaces. A content
 block inside code is markup, so `#text(red)[日本 語]` is edited.
 
-A space before an ASCII quote (`'` or `"`) stays.
+A space that an ASCII quote (`'` or `"`) follows stays, also across markup such
+as `*` in between, so the quote keeps its direction.
 
 ## Which Typst it reads
 

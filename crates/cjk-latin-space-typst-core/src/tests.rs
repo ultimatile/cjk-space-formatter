@@ -138,11 +138,45 @@ fn spaces_whose_removal_changes_the_tree_stay() {
 }
 
 #[test]
-fn a_space_before_a_quote_stays() {
+fn a_space_that_a_quote_reads_stays() {
+    // Typst picks a quote's form from the character before it, also across
+    // the delimiters between the space and the quote.
     check(&[
         ("これは 'a' です", "これは 'a'です"),
         ("日本語 \"abc\" です", "日本語 \"abc\"です"),
+        ("これは *'a'* です", "これは *'a'*です"),
+        ("これは #emph['a'] です", "これは #emph['a']です"),
     ]);
+}
+
+#[test]
+fn a_label_keeps_the_text_it_follows() {
+    check(&[
+        // One `Text` leaf before and after.
+        ("日本 語 <l>", "日本語<l>"),
+        ("= 導入 abc <sec>", "= 導入abc <sec>"),
+        // Without the space, `重要` would join the leaf the label follows.
+        ("重要 「注意」 <l>", "重要 「注意」<l>"),
+        ("日本  語 <l>", "日本  語<l>"),
+        // The line alone has no label; the whole text does.
+        ("重要 「注意」\n<l>", "重要 「注意」\n<l>"),
+        // The label follows something other than the text.
+        ("重要 「注意」\n\n<l>", "重要「注意」\n\n<l>"),
+        ("*重要 「注意」* <l>", "*重要「注意」* <l>"),
+        ("- 重要 「注意」\n<l>", "- 重要「注意」\n<l>"),
+        ("重要 「注意」'<l>", "重要「注意」'<l>"),
+        ("重要 「注意」 \\ <l>", "重要「注意」\\ <l>"),
+    ]);
+}
+
+#[test]
+fn rejected_candidates_cost_a_line_each() {
+    // Every `@ref` is followed by a candidate that changes the tree. Checked
+    // on the whole text alone, each would cost a parse of all of it.
+    let source: String = (0..2000).map(|i| format!("式 @eq:a{i} の計算\n")).collect();
+    let start = std::time::Instant::now();
+    assert_eq!(fmt(&source), source.replace("式 @", "式@"));
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
 }
 
 #[test]

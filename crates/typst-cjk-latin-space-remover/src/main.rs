@@ -33,20 +33,32 @@ struct Args {
     files: Vec<PathBuf>,
 }
 
-/// An error message for stderr; the process then exits with status 2.
-struct Failure(String);
+/// Error messages for stderr, one per line; the process then exits with
+/// status 2.
+struct Failure(Vec<String>);
+
+impl Failure {
+    fn new(message: String) -> Self {
+        Self(vec![message])
+    }
+}
 
 fn main() -> ExitCode {
-    match run(std::env::args_os().skip(1).collect()) {
+    let mut stdout = io::stdout().lock();
+    let result = run(std::env::args_os().skip(1).collect(), &mut stdout)
+        .and_then(|code| stdout.flush().map_err(io_failure("stdout")).map(|()| code));
+    match result {
         Ok(code) => code,
-        Err(Failure(message)) => {
-            eprintln!("error: {message}");
+        Err(Failure(messages)) => {
+            for message in messages {
+                eprintln!("error: {message}");
+            }
             ExitCode::from(2)
         }
     }
 }
 
-fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
+fn run(raw: Vec<OsString>, stdout: &mut io::StdoutLock) -> Result<ExitCode, Failure> {
     let mut args = Args::default();
     let mut only_files = false;
     for arg in raw {
@@ -65,13 +77,12 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
             Some("-i" | "--in-place") => args.in_place = true,
             Some("--diff") => args.diff = true,
             Some(flag) if flag.starts_with('-') && flag != "-" => {
-                return Err(Failure(format!("unrecognized argument: {flag}")));
+                return Err(Failure::new(format!("unrecognized argument: {flag}")));
             }
             _ => args.files.push(arg.into()),
         }
     }
 
-    let mut stdout = io::stdout().lock();
     let write = |stdout: &mut io::StdoutLock, bytes: &[u8]| {
         stdout.write_all(bytes).map_err(io_failure("stdout"))
     };
@@ -79,7 +90,7 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
     // stdin mode when no files are given and stdin is not a terminal
     if args.files.is_empty() {
         if io::stdin().is_terminal() {
-            return Err(Failure(
+            return Err(Failure::new(
                 "no files specified (pipe to stdin or pass file paths)".into(),
             ));
         }
@@ -96,9 +107,9 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
             });
         }
         if args.diff {
-            write(&mut stdout, diff("<stdin>", &text, &formatted).as_bytes())?;
+            write(stdout, diff("<stdin>", &text, &formatted).as_bytes())?;
         } else {
-            write(&mut stdout, formatted.as_bytes())?;
+            write(stdout, formatted.as_bytes())?;
         }
         return Ok(ExitCode::SUCCESS);
     }
@@ -108,10 +119,10 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
     for path in &args.files {
         let name = path.display().to_string();
         if !path.exists() {
-            return Err(Failure(format!("{name} not found")));
+            return Err(Failure::new(format!("{name} not found")));
         }
         if path.is_dir() {
-            return Err(Failure(format!("{name} is a directory")));
+            return Err(Failure::new(format!("{name} is a directory")));
         }
         let data = std::fs::read(path).map_err(io_failure(&name))?;
         let (text, formatted) = format(&name, data)?;
@@ -124,18 +135,18 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
         any_changed |= changed;
         if args.check {
             if changed {
-                write(&mut stdout, format!("would reformat {name}\n").as_bytes())?;
+                write(stdout, format!("would reformat {name}\n").as_bytes())?;
             }
         } else if args.diff {
-            write(&mut stdout, diff(&name, &text, &formatted).as_bytes())?;
+            write(stdout, diff(&name, &text, &formatted).as_bytes())?;
         } else if args.in_place {
             if changed {
                 std::fs::write(path, &formatted).map_err(io_failure(&name))?;
-                write(&mut stdout, format!("reformatted {name}\n").as_bytes())?;
+                write(stdout, format!("reformatted {name}\n").as_bytes())?;
             }
         } else {
             // a filter: the output is the whole file, changed or not
-            write(&mut stdout, formatted.as_bytes())?;
+            write(stdout, formatted.as_bytes())?;
         }
     }
 
@@ -148,13 +159,13 @@ fn run(raw: Vec<OsString>) -> Result<ExitCode, Failure> {
 
 /// Turns an I/O error on `name` into a [`Failure`].
 fn io_failure(name: &str) -> impl Fn(io::Error) -> Failure {
-    move |err| Failure(format!("{name}: {err}"))
+    move |err| Failure::new(format!("{name}: {err}"))
 }
 
 /// The decoded input and its formatted form.
 fn format(name: &str, data: Vec<u8>) -> Result<(String, String), Failure> {
     let text = String::from_utf8(data)
-        .map_err(|err| Failure(format!("{name} is not valid UTF-8: {}", err.utf8_error())))?;
+        .map_err(|err| Failure::new(format!("{name} is not valid UTF-8: {}", err.utf8_error())))?;
     match cjk_latin_space_typst_core::format(&text) {
         Ok(formatted) => Ok((text, formatted)),
         Err(errors) => {
@@ -162,7 +173,7 @@ fn format(name: &str, data: Vec<u8>) -> Result<(String, String), Failure> {
                 .iter()
                 .map(|error| format!("{name}: line {}: {}", error.line(), error.message()))
                 .collect();
-            Err(Failure(lines.join("\nerror: ")))
+            Err(Failure(lines))
         }
     }
 }
