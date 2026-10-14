@@ -151,7 +151,7 @@ fn pass(text: &str, memo: &mut Memo) -> Option<String> {
     // around it that parses alone to what that line is in the whole text.
     // The ones kept there, and those with no such line, are then checked on
     // the whole text.
-    let mut alone: Vec<Option<Option<Vec<Token>>>> = vec![None; lines.len()];
+    let mut alone = vec![Alone::Unchecked; lines.len()];
     let mut by_line: BTreeMap<usize, Vec<Range<usize>>> = BTreeMap::new();
     let mut kept = Vec::new();
     for (i, line) in lines.iter().enumerate() {
@@ -160,11 +160,15 @@ fn pass(text: &str, memo: &mut Memo) -> Option<String> {
         }
         let mut at = Some(i);
         while let Some(j) = at {
-            let checked = alone[j].get_or_insert_with(|| {
+            if let Alone::Unchecked = alone[j] {
                 let local = shape(&parse(&text[lines[j].range.clone()]));
-                (local == lines[j].shape()).then_some(local)
-            });
-            if checked.is_some() {
+                alone[j] = if local == lines[j].shape() {
+                    Alone::Same(local)
+                } else {
+                    Alone::Differs
+                };
+            }
+            if let Alone::Same(_) = alone[j] {
                 break;
             }
             at = lines[j].outer;
@@ -185,7 +189,9 @@ fn pass(text: &str, memo: &mut Memo) -> Option<String> {
             .iter()
             .map(|run| run.start - start..run.end - start)
             .collect();
-        let local_shape = alone[j].take().flatten().expect("the line parses alone");
+        let Alone::Same(local_shape) = std::mem::replace(&mut alone[j], Alone::Unchecked) else {
+            unreachable!("only a line that parses alone collects runs");
+        };
         let accepted = memo
             .entry((source.to_owned(), local.clone()))
             .or_insert_with(|| accept(source, &local_shape, &local));
@@ -204,6 +210,16 @@ fn pass(text: &str, memo: &mut Memo) -> Option<String> {
         return None;
     }
     Some(delete(text, &accepted))
+}
+
+/// How a line's source parses on its own.
+#[derive(Clone)]
+enum Alone {
+    Unchecked,
+    /// To a `shape` other than the line's in the whole text.
+    Differs,
+    /// To the line's `shape` in the whole text, which this is.
+    Same(Vec<Token>),
 }
 
 /// A stretch of one `Markup` node's children that ends with a `Space` or

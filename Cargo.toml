@@ -4,6 +4,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/cjk-latin-space-typst-core"]
+default-members = [".", "crates/cjk-latin-space-typst-core"]
 
 [package]
 name = "typst-cjk-latin-space-remover"
