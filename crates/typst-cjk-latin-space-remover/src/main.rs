@@ -66,11 +66,12 @@ fn run(raw: Vec<OsString>, stdout: &mut io::StdoutLock) -> Result<ExitCode, Fail
             _ if only_files => args.files.push(arg.into()),
             Some("--") => only_files = true,
             Some("-h" | "--help") => {
-                print!("{USAGE}");
+                write(stdout, USAGE.as_bytes())?;
                 return Ok(ExitCode::SUCCESS);
             }
             Some("-V" | "--version") => {
-                println!("{NAME} {}", env!("CARGO_PKG_VERSION"));
+                let version = format!("{NAME} {}\n", env!("CARGO_PKG_VERSION"));
+                write(stdout, version.as_bytes())?;
                 return Ok(ExitCode::SUCCESS);
             }
             Some("--check") => args.check = true,
@@ -82,10 +83,6 @@ fn run(raw: Vec<OsString>, stdout: &mut io::StdoutLock) -> Result<ExitCode, Fail
             _ => args.files.push(arg.into()),
         }
     }
-
-    let write = |stdout: &mut io::StdoutLock, bytes: &[u8]| {
-        stdout.write_all(bytes).map_err(io_failure("stdout"))
-    };
 
     // stdin mode when no files are given and stdin is not a terminal
     if args.files.is_empty() {
@@ -155,6 +152,10 @@ fn run(raw: Vec<OsString>, stdout: &mut io::StdoutLock) -> Result<ExitCode, Fail
     } else {
         ExitCode::SUCCESS
     })
+}
+
+fn write(stdout: &mut io::StdoutLock, bytes: &[u8]) -> Result<(), Failure> {
+    stdout.write_all(bytes).map_err(io_failure("stdout"))
 }
 
 /// Turns an I/O error on `name` into a [`Failure`].

@@ -24,8 +24,12 @@ Only markup prose is edited. Math, raw text, comments, and code — including
 string literals such as `#let x = "日本 語"` — keep their spaces. A content
 block inside code is markup, so `#text(red)[日本 語]` is edited.
 
-A space that an ASCII quote (`'` or `"`) follows stays, also across markup such
-as `*` in between, so the quote keeps its direction.
+A space directly before an ASCII quote (`'` or `"`) stays.
+
+The check is on what Typst parses, not on how it lays the document out. A
+result Typst decides at layout can change: a quote after `*` or `#emph[` that
+followed a deleted space may take the other form, and a label may attach to
+more text when two pieces of prose join.
 
 ## Which Typst it reads
 

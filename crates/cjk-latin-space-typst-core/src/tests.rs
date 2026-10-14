@@ -138,45 +138,47 @@ fn spaces_whose_removal_changes_the_tree_stay() {
 }
 
 #[test]
-fn a_space_that_a_quote_reads_stays() {
-    // Typst picks a quote's form from the character before it, also across
-    // the delimiters between the space and the quote.
+fn a_space_before_a_quote_stays() {
+    // Typst picks a quote's form from the character before it, which the
+    // tree does not record. Only a quote right after the space is seen.
     check(&[
         ("これは 'a' です", "これは 'a'です"),
         ("日本語 \"abc\" です", "日本語 \"abc\"です"),
-        ("これは *'a'* です", "これは *'a'*です"),
-        ("これは #emph['a'] です", "これは #emph['a']です"),
+        ("これは *'a'* です", "これは*'a'*です"),
     ]);
 }
 
 #[test]
-fn a_label_keeps_the_text_it_follows() {
+fn labels_do_not_hold_spaces() {
     check(&[
-        // One `Text` leaf before and after.
         ("日本 語 <l>", "日本語<l>"),
+        ("重要 「注意」 <l>", "重要「注意」<l>"),
         ("= 導入 abc <sec>", "= 導入abc <sec>"),
-        // Without the space, `重要` would join the leaf the label follows.
-        ("重要 「注意」 <l>", "重要 「注意」<l>"),
-        ("日本  語 <l>", "日本  語<l>"),
-        // The line alone has no label; the whole text does.
-        ("重要 「注意」\n<l>", "重要 「注意」\n<l>"),
-        // The label follows something other than the text.
-        ("重要 「注意」\n\n<l>", "重要「注意」\n\n<l>"),
-        ("*重要 「注意」* <l>", "*重要「注意」* <l>"),
-        ("- 重要 「注意」\n<l>", "- 重要「注意」\n<l>"),
-        ("重要 「注意」'<l>", "重要「注意」'<l>"),
-        ("重要 「注意」 \\ <l>", "重要「注意」\\ <l>"),
     ]);
+}
+
+/// `fmt(source)`, and the bytes it parsed per byte of `source`.
+fn parsed_per_byte(source: &str) -> (String, usize) {
+    PARSED.with(|parsed| parsed.set(0));
+    let out = fmt(source);
+    (out, PARSED.with(|parsed| parsed.get()) / source.len())
 }
 
 #[test]
 fn rejected_candidates_cost_a_line_each() {
     // Every `@ref` is followed by a candidate that changes the tree. Checked
     // on the whole text alone, each would cost a parse of all of it.
-    let source: String = (0..2000).map(|i| format!("式 @eq:a{i} の計算\n")).collect();
-    let start = std::time::Instant::now();
-    assert_eq!(fmt(&source), source.replace("式 @", "式@"));
-    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+    let lines: String = (0..500).map(|i| format!("式 @eq:a{i} の計算\n")).collect();
+    let expected = lines.replace("式 @", "式@");
+    for (source, expected) in [
+        (lines.clone(), expected.clone()),
+        // Lines inside a content block count as lines too.
+        (format!("#[\n{lines}]\n"), format!("#[\n{expected}]\n")),
+    ] {
+        let (out, per_byte) = parsed_per_byte(&source);
+        assert_eq!(out, expected);
+        assert!(per_byte < 20, "{per_byte} bytes parsed per byte");
+    }
 }
 
 #[test]
