@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 
 [manifest]
@@ -7,7 +7,6 @@ members = [
     "cjk-latin-space",
     "markdown-cjk-latin-space-remover",
     "mdformat-no-cjk-latin-space",
-    "typst-cjk-latin-space-remover",
 ]
 
 [manifest.dependency-groups]
@@ -16,7 +15,6 @@ dev = [
     { name = "markdown-cjk-latin-space-remover", editable = "packages/markdown-cjk-latin-space-remover" },
     { name = "mdformat-no-cjk-latin-space", editable = "packages/mdformat-no-cjk-latin-space" },
     { name = "pytest", specifier = ">=8.0" },
-    { name = "typst-cjk-latin-space-remover", editable = "packages/typst-cjk-latin-space-remover" },
 ]
 
 [[package]]
@@ -356,21 +354,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/f6/cc/6253133b5bb138fc3
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl", hash = "sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8", size = 45571, upload-time = "2026-07-02T08:40:04.659Z" },
 ]
-
-[[package]]
-name = "typst-cjk-latin-space-remover"
-version = "0.1.0"
-source = { editable = "packages/typst-cjk-latin-space-remover" }
-
-[package.dev-dependencies]
-dev = [
-    { name = "cjk-latin-space" },
-]
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [{ name = "cjk-latin-space", editable = "core" }]
 
 [[package]]
 name = "wcwidth"

@@ -1,6 +1,8 @@
 """cjk-latin-space core.
 
-Single source of the format-independent invariant shared by every front-end:
+Single source of the format-independent invariant shared by every Python
+front-end (the Rust crate `cjk-latin-space-typst-core` implements the same rule
+and runs the same `conformance/cases.json`):
 within one *plain run* of text (no protected spans — no math, code, refs), a run
 of spaces *between* two non-space characters is removed when either side is CJK
 (so CJK<->Latin, CJK<->digit and CJK<->CJK all collapse), with one exception — a
@@ -10,15 +12,16 @@ is left alone; front-ends own their own edges.
 
 Boundaries with protected spans (math/code/refs) are deliberately NOT handled
 here — that plumbing lives in each front-end, which knows its own parser's span
-model. The CJK character class is exported so that plumbing's boundary logic
-shares one definition with `squash` and cannot drift from it.
+model. The CJK character class is exported so that the Python front-ends'
+boundary logic shares one definition with `squash` and cannot drift from it.
 """
 
 import re
 
 # Unicode ranges covering Japanese (Han, Hiragana, Katakana) and CJK punctuation.
-# Exported as a raw character-class body (no enclosing brackets) so front-ends
-# can splice it into their own boundary patterns against the same definition.
+# Exported as a raw character-class body (no enclosing brackets) so the Python
+# front-ends can splice it into their own boundary patterns against the same
+# definition.
 CJK_CLASS = (
     r"　-〿"  # CJK symbols and punctuation (、。「」 etc.)
     r"぀-ゟ"  # Hiragana

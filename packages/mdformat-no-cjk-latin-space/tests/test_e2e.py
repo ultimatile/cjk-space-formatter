@@ -2,8 +2,8 @@
 
 Covers protected-span and boundary behaviour specific to the mdformat plugin.
 The CJK-boundary cases marked `# MIRROR` carry the same label in
-typst-cjk-latin-space-remover's suite and markdown-cjk-latin-space-remover's;
-keep the three in lockstep.
+markdown-cjk-latin-space-remover's suite and in the Typst crate's
+(`crates/cjk-latin-space-typst-core/src/tests.rs`); keep the three in lockstep.
 """
 
 import mdformat
